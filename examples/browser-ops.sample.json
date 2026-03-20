@@ -1,0 +1,72 @@
+{
+  "server": "browser-ops-mcp",
+  "tools": [
+    {
+      "name": "open_page",
+      "description": "Open a browser page at a given URL and wait for it to finish loading.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string" },
+          "wait_until": { "type": "string" }
+        },
+        "required": ["url"]
+      }
+    },
+    {
+      "name": "snapshot_dom",
+      "description": "Capture a DOM and accessibility snapshot for the current page.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_accessibility": { "type": "boolean" }
+        }
+      }
+    },
+    {
+      "name": "extract_table",
+      "description": "Extract a structured table from the current page into rows and columns.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "selector": { "type": "string" }
+        },
+        "required": ["selector"]
+      }
+    },
+    {
+      "name": "download_csv",
+      "description": "Download a CSV export from the current browser session to local disk.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "destination": { "type": "string" },
+          "overwrite": { "type": "boolean" }
+        },
+        "required": ["destination"]
+      }
+    },
+    {
+      "name": "fill_form",
+      "description": "Fill a browser form with structured input data and submit it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "selector": { "type": "string" },
+          "values": { "type": "object" }
+        },
+        "required": ["selector", "values"]
+      }
+    },
+    {
+      "name": "take_screenshot",
+      "description": "Capture a screenshot of the current browser viewport.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "full_page": { "type": "boolean" }
+        }
+      }
+    }
+  ]
+}

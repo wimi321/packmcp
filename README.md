@@ -14,6 +14,7 @@ Instead of handing every tool to the agent, PackMCP lets you:
 - score tools against a concrete task and pack profile
 - export a tighter allowlist for Python and TypeScript runtimes
 - run the same analysis from the CLI for scripts and CI
+- compare two MCP manifests before migration or rollout
 
 ## Why this matters
 
@@ -32,6 +33,7 @@ PackMCP is built for that layer.
 - risk classification and warning cards
 - recommended pack generation by profile and risk budget
 - copyable exports for allowlists and SDK filters
+- optional multi-manifest comparison mode
 - sample manifest and testable core logic
 
 ## Quickstart
@@ -54,6 +56,12 @@ You can run a CLI analysis too:
 npm run analyze:sample
 ```
 
+And compare two manifests:
+
+```bash
+npm run compare:sample
+```
+
 ## Project structure
 
 - `index.html` app shell
@@ -73,6 +81,7 @@ npm run analyze:sample
 - Review a vendor MCP manifest and surface high-risk tools before rollout.
 - Compare how much schema/token cost you save by curating a smaller pack.
 - Generate a structured JSON report in CI before approving an MCP server rollout.
+- Compare two MCP servers or two versions of the same server before migration.
 
 ## Design principles
 
@@ -113,10 +122,22 @@ packmcp analyze \
   --output ./packmcp-report.json
 ```
 
+Compare two manifests:
+
+```bash
+packmcp compare \
+  --left ./examples/github-mcp-server.sample.json \
+  --right ./examples/browser-ops.sample.json \
+  --preset coding \
+  --profile coding \
+  --risk medium \
+  --format json
+```
+
 ## Next upgrades
 
 - ingest MCP Inspector exports directly
 - add runtime proxy mode for enforcement
-- compare multiple manifests side by side
+- compare multiple manifests side by side with diff history
 - improve token estimation using schema-aware compression rules
 - generate client-specific configs for more runtimes

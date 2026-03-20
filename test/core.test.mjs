@@ -5,6 +5,7 @@ import { SAMPLE_MANIFEST } from "../src/data.js";
 import {
   analyzeTools,
   buildAnalysisReport,
+  buildComparisonReport,
   buildProfileMatrix,
   buildExportPayloads,
   buildPackSummary,
@@ -121,4 +122,66 @@ test("CLI analyze outputs JSON report", () => {
   const parsed = JSON.parse(output);
   assert.equal(parsed.server, "github-mcp-server");
   assert.ok(parsed.summary.selectedCount > 0);
+});
+
+test("buildComparisonReport highlights overlap and pack differences", () => {
+  const report = buildComparisonReport(
+    {
+      server: "github-mcp-server",
+      tools: SAMPLE_MANIFEST.tools
+    },
+    {
+      server: "browser-ops-mcp",
+      tools: [
+        {
+          name: "open_page",
+          description: "Open a browser page and wait for load.",
+          inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] }
+        },
+        {
+          name: "comment_issue",
+          description: "Post a comment in a work queue system.",
+          inputSchema: { type: "object", properties: { body: { type: "string" } }, required: ["body"] }
+        }
+      ]
+    },
+    "Investigate and report safely.",
+    "balanced",
+    "medium"
+  );
+
+  assert.equal(report.left.server, "github-mcp-server");
+  assert.equal(report.right.server, "browser-ops-mcp");
+  assert.ok(Array.isArray(report.overlap.sharedAllNames));
+  assert.ok(typeof report.narrative === "string");
+});
+
+test("CLI compare outputs JSON comparison report", () => {
+  const output = execFileSync(
+    "node",
+    [
+      "./bin/packmcp.mjs",
+      "compare",
+      "--left",
+      "./examples/github-mcp-server.sample.json",
+      "--right",
+      "./examples/browser-ops.sample.json",
+      "--preset",
+      "coding",
+      "--profile",
+      "coding",
+      "--risk",
+      "medium",
+      "--format",
+      "json"
+    ],
+    {
+      cwd: new URL("../", import.meta.url),
+      encoding: "utf8"
+    }
+  );
+
+  const parsed = JSON.parse(output);
+  assert.equal(parsed.left.server, "github-mcp-server");
+  assert.equal(parsed.right.server, "browser-ops-mcp");
 });

@@ -1,8 +1,9 @@
-import { COPY_LABELS, PROFILE_CONFIG, SAMPLE_MANIFEST, TASK_PRESETS } from "./data.js";
+import { COMPARISON_MANIFEST, COPY_LABELS, PROFILE_CONFIG, SAMPLE_MANIFEST, TASK_PRESETS } from "./data.js";
 import {
   analyzeTools,
   buildAnalysisReport,
   buildCategoryBreakdown,
+  buildComparisonReport,
   buildExportPayloads,
   buildPackSummary,
   buildProfileMatrix,
@@ -17,21 +18,27 @@ import {
 
 const state = {
   rawTools: [],
+  comparisonRawTools: [],
   analyzedTools: [],
   selectedIds: new Set(),
   recommendedIds: new Set(),
-  serverName: "custom-server"
+  serverName: "custom-server",
+  comparisonServerName: "",
+  comparisonReport: null
 };
 
 const el = {
   manifestInput: document.querySelector("#manifestInput"),
+  compareManifestInput: document.querySelector("#compareManifestInput"),
   taskInput: document.querySelector("#taskInput"),
   fileInput: document.querySelector("#fileInput"),
+  compareFileInput: document.querySelector("#compareFileInput"),
   profileSelect: document.querySelector("#profileSelect"),
   riskBudgetSelect: document.querySelector("#riskBudgetSelect"),
   sortSelect: document.querySelector("#sortSelect"),
   analyzeButton: document.querySelector("#analyzeButton"),
   loadSampleButton: document.querySelector("#loadSampleButton"),
+  loadCompareButton: document.querySelector("#loadCompareButton"),
   statusMessage: document.querySelector("#statusMessage"),
   filterInput: document.querySelector("#filterInput"),
   toolList: document.querySelector("#toolList"),
@@ -48,11 +55,13 @@ const el = {
   profileMatrix: document.querySelector("#profileMatrix"),
   categoryBreakdown: document.querySelector("#categoryBreakdown"),
   riskBreakdown: document.querySelector("#riskBreakdown"),
+  comparisonPanel: document.querySelector("#comparisonPanel"),
   allowlistOutput: document.querySelector("#allowlistOutput"),
   pythonOutput: document.querySelector("#pythonOutput"),
   typescriptOutput: document.querySelector("#typescriptOutput"),
   markdownOutput: document.querySelector("#markdownOutput"),
   reportOutput: document.querySelector("#reportOutput"),
+  comparisonOutput: document.querySelector("#comparisonOutput"),
   selectRecommendedButton: document.querySelector("#selectRecommendedButton")
 };
 
@@ -173,6 +182,65 @@ function renderProfileMatrix() {
     .join("");
 }
 
+function renderComparison() {
+  if (!state.comparisonReport) {
+    el.comparisonPanel.innerHTML = '<div class="empty-state">Add a second manifest to compare overlap, safer packs, and migration paths.</div>';
+    return;
+  }
+
+  const { left, right, overlap, narrative } = state.comparisonReport;
+  el.comparisonPanel.innerHTML = `
+    <article class="comparison-card">
+      <div class="panel-header">
+        <h3>${left.server}</h3>
+        <span class="badge">${left.summary.selectedCount} selected</span>
+      </div>
+      <p>${left.recommendation}</p>
+      <div class="matrix-stats">
+        <span class="badge" data-tone="accent">${left.summary.savingsPercent}% saved</span>
+        <span class="badge">${left.summary.highRiskCount} high-risk total</span>
+      </div>
+    </article>
+
+    <article class="comparison-card">
+      <div class="panel-header">
+        <h3>${right.server}</h3>
+        <span class="badge">${right.summary.selectedCount} selected</span>
+      </div>
+      <p>${right.recommendation}</p>
+      <div class="matrix-stats">
+        <span class="badge" data-tone="accent">${right.summary.savingsPercent}% saved</span>
+        <span class="badge">${right.summary.highRiskCount} high-risk total</span>
+      </div>
+    </article>
+
+    <article class="comparison-card">
+      <div class="panel-header">
+        <h3>Overlap</h3>
+        <span class="badge">${overlap.sharedAllCount} shared tools</span>
+      </div>
+      <ul>
+        <li>Shared selected tools: ${overlap.sharedSelectedCount}</li>
+        <li>${left.server} unique tools: ${overlap.leftOnlyAllCount}</li>
+        <li>${right.server} unique tools: ${overlap.rightOnlyAllCount}</li>
+      </ul>
+      <p>${narrative}</p>
+    </article>
+
+    <article class="comparison-card">
+      <div class="panel-header">
+        <h3>Migration hints</h3>
+        <span class="badge" data-tone="warning">${overlap.leftOnlySelectedCount + overlap.rightOnlySelectedCount} pack diffs</span>
+      </div>
+      <ul>
+        <li>${left.server} only in pack: ${overlap.leftOnlySelectedNames.slice(0, 4).join(", ") || "None"}</li>
+        <li>${right.server} only in pack: ${overlap.rightOnlySelectedNames.slice(0, 4).join(", ") || "None"}</li>
+        <li>Shared pack tools: ${overlap.sharedSelectedNames.slice(0, 4).join(", ") || "None"}</li>
+      </ul>
+    </article>
+  `;
+}
+
 function renderBreakdownRows(container, items, getLabel, getTone = () => "accent") {
   if (items.length === 0) {
     container.innerHTML = '<div class="empty-state">No breakdown data available yet.</div>';
@@ -247,6 +315,7 @@ function updateExports() {
   el.typescriptOutput.value = payloads.typescript;
   el.markdownOutput.value = payloads.markdown;
   el.reportOutput.value = JSON.stringify(report, null, 2);
+  el.comparisonOutput.value = state.comparisonReport ? JSON.stringify(state.comparisonReport, null, 2) : "";
 }
 
 function refreshAll() {
@@ -254,6 +323,7 @@ function refreshAll() {
   updateSummary();
   renderProfileMatrix();
   renderBreakdowns();
+  renderComparison();
   updateExports();
 }
 
@@ -275,6 +345,23 @@ function analyzeManifest() {
       el.riskBudgetSelect.value
     );
     state.selectedIds = new Set(state.recommendedIds);
+    const compareInput = el.compareManifestInput.value.trim();
+    if (compareInput) {
+      const compareParsed = parseManifest(compareInput);
+      state.comparisonServerName = compareParsed.server;
+      state.comparisonRawTools = compareParsed.tools;
+      state.comparisonReport = buildComparisonReport(
+        { server: state.serverName, tools: state.rawTools },
+        { server: state.comparisonServerName, tools: state.comparisonRawTools },
+        el.taskInput.value.trim(),
+        el.profileSelect.value,
+        el.riskBudgetSelect.value
+      );
+    } else {
+      state.comparisonServerName = "";
+      state.comparisonRawTools = [];
+      state.comparisonReport = null;
+    }
     el.statusMessage.textContent = `Analyzed ${state.analyzedTools.length} tools from ${state.serverName}. Recommended pack ready.`;
     refreshAll();
   } catch (error) {
@@ -284,13 +371,24 @@ function analyzeManifest() {
 
 function loadSample() {
   el.manifestInput.value = JSON.stringify(SAMPLE_MANIFEST, null, 2);
+  el.compareManifestInput.value = "";
   el.taskInput.value = TASK_PRESETS.review;
   el.profileSelect.value = "balanced";
   el.riskBudgetSelect.value = "medium";
   analyzeManifest();
 }
 
+function loadComparisonPair() {
+  el.manifestInput.value = JSON.stringify(SAMPLE_MANIFEST, null, 2);
+  el.compareManifestInput.value = JSON.stringify(COMPARISON_MANIFEST, null, 2);
+  el.taskInput.value = TASK_PRESETS.coding;
+  el.profileSelect.value = "coding";
+  el.riskBudgetSelect.value = "medium";
+  analyzeManifest();
+}
+
 el.loadSampleButton.addEventListener("click", loadSample);
+el.loadCompareButton.addEventListener("click", loadComparisonPair);
 el.analyzeButton.addEventListener("click", analyzeManifest);
 el.profileSelect.addEventListener("change", analyzeManifest);
 el.riskBudgetSelect.addEventListener("change", analyzeManifest);
@@ -308,6 +406,15 @@ el.fileInput.addEventListener("change", async (event) => {
     return;
   }
   el.manifestInput.value = await file.text();
+  analyzeManifest();
+});
+
+el.compareFileInput.addEventListener("change", async (event) => {
+  const [file] = event.target.files;
+  if (!file) {
+    return;
+  }
+  el.compareManifestInput.value = await file.text();
   analyzeManifest();
 });
 

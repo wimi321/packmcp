@@ -6,6 +6,7 @@ import process from "node:process";
 import { TASK_PRESETS } from "../src/data.js";
 import {
   buildAnalysisReport,
+  buildComparisonReport,
   buildExportPayloads,
   buildPackSummary,
   parseManifest,
@@ -18,6 +19,7 @@ function printHelp() {
 
 Usage:
   packmcp analyze --input <file> [--task <text> | --preset <name>] [--profile <name>] [--risk <level>] [--format <json|markdown|allowlist>] [--output <file>]
+  packmcp compare --left <file> --right <file> [--task <text> | --preset <name>] [--profile <name>] [--risk <level>] [--format <json|markdown>] [--output <file>]
 
 Options:
   --input <file>     Path to a manifest JSON file
@@ -70,15 +72,9 @@ async function main() {
     return;
   }
 
-  if (command !== "analyze") {
+  if (command !== "analyze" && command !== "compare") {
     console.error(`Unknown command: ${command}`);
     printHelp();
-    process.exitCode = 1;
-    return;
-  }
-
-  if (!args.input) {
-    console.error("Missing required --input <file> argument.");
     process.exitCode = 1;
     return;
   }
@@ -91,6 +87,53 @@ async function main() {
   const profile = typeof args.profile === "string" ? args.profile : "balanced";
   const risk = typeof args.risk === "string" ? args.risk : "medium";
   const format = typeof args.format === "string" ? args.format : "json";
+
+  if (command === "compare") {
+    if (!args.left || !args.right) {
+      console.error("Missing required --left <file> or --right <file> argument.");
+      process.exitCode = 1;
+      return;
+    }
+
+    const leftInput = await readFile(args.left, "utf8");
+    const rightInput = await readFile(args.right, "utf8");
+    const leftParsed = parseManifest(leftInput);
+    const rightParsed = parseManifest(rightInput);
+    const report = buildComparisonReport(leftParsed, rightParsed, task, profile, risk);
+
+    if (format === "markdown") {
+      await emitOutput(`# PackMCP comparison report
+
+- Left: ${leftParsed.server}
+- Right: ${rightParsed.server}
+- Profile: ${profile}
+- Risk budget: ${risk}
+- Shared tools: ${report.overlap.sharedAllCount}
+- Shared selected tools: ${report.overlap.sharedSelectedCount}
+
+${report.narrative}
+
+## ${leftParsed.server}
+${report.left.recommendation}
+
+## ${rightParsed.server}
+${report.right.recommendation}
+
+## Shared selected tools
+${report.overlap.sharedSelectedNames.join(", ") || "None"}
+`, args.output);
+      return;
+    }
+
+    await emitOutput(JSON.stringify(report, null, 2), args.output);
+    return;
+  }
+
+  if (!args.input) {
+    console.error("Missing required --input <file> argument.");
+    process.exitCode = 1;
+    return;
+  }
 
   const input = await readFile(args.input, "utf8");
   const parsed = parseManifest(input);

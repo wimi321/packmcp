@@ -477,6 +477,100 @@ export function buildAnalysisReport(serverName, rawTools, task, profileKey, risk
   };
 }
 
+function getToolNameSet(rawTools) {
+  return new Set(
+    rawTools
+      .map((tool, index) => tool.name || `tool_${index}`)
+      .filter(Boolean)
+  );
+}
+
+function getSelectedToolNameSet(selectedTools) {
+  return new Set(selectedTools.map((tool) => tool.name));
+}
+
+function setIntersection(left, right) {
+  return [...left].filter((value) => right.has(value)).sort((a, b) => a.localeCompare(b));
+}
+
+function setDifference(left, right) {
+  return [...left].filter((value) => !right.has(value)).sort((a, b) => a.localeCompare(b));
+}
+
+function buildComparisonNarrative(leftReport, rightReport, overlap) {
+  const tokenWinner =
+    leftReport.summary.savingsPercent === rightReport.summary.savingsPercent
+      ? "Both packs save a similar amount of tool metadata."
+      : leftReport.summary.savingsPercent > rightReport.summary.savingsPercent
+        ? `${leftReport.server} trims context more aggressively.`
+        : `${rightReport.server} trims context more aggressively.`;
+
+  const riskWinner =
+    leftReport.selectedTools.filter((tool) => tool.risk === "high").length ===
+    rightReport.selectedTools.filter((tool) => tool.risk === "high").length
+      ? "Both recommended packs keep a similar amount of high-risk surface area."
+      : leftReport.selectedTools.filter((tool) => tool.risk === "high").length <
+          rightReport.selectedTools.filter((tool) => tool.risk === "high").length
+        ? `${leftReport.server} keeps a safer recommended pack.`
+        : `${rightReport.server} keeps a safer recommended pack.`;
+
+  if (overlap.sharedSelectedNames.length === 0) {
+    return `${tokenWinner} ${riskWinner} The selected packs have no overlapping tool names, which usually means the two servers solve very different workflows.`;
+  }
+
+  return `${tokenWinner} ${riskWinner} The recommended packs still share ${overlap.sharedSelectedNames.length} tool names, so there is a realistic migration or fallback path between them.`;
+}
+
+export function buildComparisonReport(leftManifest, rightManifest, task, profileKey, riskBudgetKey) {
+  const leftReport = buildAnalysisReport(
+    leftManifest.server,
+    leftManifest.tools,
+    task,
+    profileKey,
+    riskBudgetKey
+  );
+  const rightReport = buildAnalysisReport(
+    rightManifest.server,
+    rightManifest.tools,
+    task,
+    profileKey,
+    riskBudgetKey
+  );
+
+  const leftToolNames = getToolNameSet(leftManifest.tools);
+  const rightToolNames = getToolNameSet(rightManifest.tools);
+  const leftSelectedNames = getSelectedToolNameSet(leftReport.selectedTools);
+  const rightSelectedNames = getSelectedToolNameSet(rightReport.selectedTools);
+
+  const overlap = {
+    sharedAllNames: setIntersection(leftToolNames, rightToolNames),
+    leftOnlyAllNames: setDifference(leftToolNames, rightToolNames),
+    rightOnlyAllNames: setDifference(rightToolNames, leftToolNames),
+    sharedSelectedNames: setIntersection(leftSelectedNames, rightSelectedNames),
+    leftOnlySelectedNames: setDifference(leftSelectedNames, rightSelectedNames),
+    rightOnlySelectedNames: setDifference(rightSelectedNames, leftSelectedNames)
+  };
+
+  return {
+    version: 1,
+    task,
+    profile: profileKey,
+    riskBudget: riskBudgetKey,
+    left: leftReport,
+    right: rightReport,
+    overlap: {
+      ...overlap,
+      sharedAllCount: overlap.sharedAllNames.length,
+      leftOnlyAllCount: overlap.leftOnlyAllNames.length,
+      rightOnlyAllCount: overlap.rightOnlyAllNames.length,
+      sharedSelectedCount: overlap.sharedSelectedNames.length,
+      leftOnlySelectedCount: overlap.leftOnlySelectedNames.length,
+      rightOnlySelectedCount: overlap.rightOnlySelectedNames.length
+    },
+    narrative: buildComparisonNarrative(leftReport, rightReport, overlap)
+  };
+}
+
 export function buildExportPayloads(serverName, tools, selectedIds) {
   const selectedTools = tools.filter((tool) => selectedIds.has(tool.id));
   const selectedNames = [...new Set(selectedTools.map((tool) => tool.name))];

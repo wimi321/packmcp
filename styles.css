@@ -379,6 +379,7 @@ textarea {
 }
 
 .matrix-card,
+.comparison-card,
 .breakdown-card {
   padding: 14px;
   border-radius: 20px;
@@ -387,6 +388,7 @@ textarea {
 }
 
 .matrix-card h3,
+.comparison-card h3,
 .breakdown-card h3 {
   margin: 0;
 }
@@ -402,6 +404,27 @@ textarea {
   margin: 0;
   color: var(--muted);
   line-height: 1.5;
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.comparison-card p,
+.comparison-card ul {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.comparison-card ul {
+  padding-left: 18px;
+}
+
+.comparison-card li + li {
+  margin-top: 4px;
 }
 
 .bar-list {
