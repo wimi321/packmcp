@@ -1,0 +1,74 @@
+{
+  "server": "github-mcp-server",
+  "tools": [
+    {
+      "name": "list_issues",
+      "description": "List repository issues with filters for state, labels, assignee, and pagination.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string" },
+          "repo": { "type": "string" },
+          "state": { "type": "string", "enum": ["open", "closed", "all"] }
+        },
+        "required": ["owner", "repo"]
+      }
+    },
+    {
+      "name": "get_issue",
+      "description": "Read a single issue including title, body, labels, assignees, and timeline summary.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string" },
+          "repo": { "type": "string" },
+          "issue_number": { "type": "integer" }
+        },
+        "required": ["owner", "repo", "issue_number"]
+      }
+    },
+    {
+      "name": "comment_issue",
+      "description": "Post a comment on an issue or pull request thread.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string" },
+          "repo": { "type": "string" },
+          "issue_number": { "type": "integer" },
+          "body": { "type": "string" }
+        },
+        "required": ["owner", "repo", "issue_number", "body"]
+      }
+    },
+    {
+      "name": "create_branch",
+      "description": "Create a new branch from a source reference in a repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string" },
+          "repo": { "type": "string" },
+          "branch": { "type": "string" },
+          "from_ref": { "type": "string" }
+        },
+        "required": ["owner", "repo", "branch", "from_ref"]
+      }
+    },
+    {
+      "name": "commit_files",
+      "description": "Create or update files in a branch and commit the changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string" },
+          "repo": { "type": "string" },
+          "branch": { "type": "string" },
+          "files": { "type": "array" },
+          "commit_message": { "type": "string" }
+        },
+        "required": ["owner", "repo", "branch", "files", "commit_message"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="PackMCP helps you build smaller, safer MCP toolsets with task-aware recommendations, token estimates, and exportable allowlists."
+    />
+    <title>PackMCP</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">PackMCP</p>
+          <h1>Build smaller, safer MCP toolsets for real tasks.</h1>
+          <p class="hero-text">
+            Paste an MCP `tools/list` payload, describe the task, and PackMCP
+            will recommend a tighter tool pack with token estimates, risk
+            scoring, and export snippets you can drop into your workflows.
+          </p>
+          <div class="hero-actions">
+            <button id="loadSampleButton" class="primary-button">
+              Load sample toolset
+            </button>
+            <button id="analyzeButton" class="ghost-button">
+              Analyze manifest
+            </button>
+          </div>
+        </div>
+        <aside class="hero-panel">
+          <div class="hero-stat">
+            <span class="hero-stat-label">Pain point</span>
+            <strong>Tool overload and oversized context windows</strong>
+          </div>
+          <div class="hero-stat">
+            <span class="hero-stat-label">MVP focus</span>
+            <strong>Planning and exporting curated tool packs</strong>
+          </div>
+        </aside>
+      </header>
+
+      <main class="grid">
+        <section class="panel stack">
+          <div class="panel-header">
+            <h2>1. Input</h2>
+            <span class="chip">Local-first</span>
+          </div>
+
+          <label class="field">
+            <span>MCP tool manifest JSON</span>
+            <textarea
+              id="manifestInput"
+              rows="14"
+              placeholder='Paste a `tools/list` response, a `{ "tools": [...] }` object, or a raw array of tools.'
+            ></textarea>
+          </label>
+
+          <div class="input-grid">
+            <label class="field compact">
+              <span>Upload JSON file</span>
+              <input id="fileInput" type="file" accept=".json,application/json" />
+            </label>
+            <label class="field compact">
+              <span>Pack profile</span>
+              <select id="profileSelect">
+                <option value="balanced">Balanced</option>
+                <option value="read-only">Read-only research</option>
+                <option value="coding">Safe coding</option>
+                <option value="release">Release operator</option>
+                <option value="browser">Browser automation</option>
+              </select>
+            </label>
+            <label class="field compact">
+              <span>Risk budget</span>
+              <select id="riskBudgetSelect">
+                <option value="low">Low</option>
+                <option value="medium" selected>Medium</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Task description</span>
+            <textarea
+              id="taskInput"
+              rows="4"
+              placeholder="Example: Triage bug reports, inspect CI failures, and comment with next steps without merging or shipping changes."
+            ></textarea>
+          </label>
+
+          <div class="task-presets">
+            <button class="mini-button" data-task="review">Issue triage</button>
+            <button class="mini-button" data-task="coding">Safe coding</button>
+            <button class="mini-button" data-task="release">Release ops</button>
+            <button class="mini-button" data-task="browser">Browser extraction</button>
+          </div>
+
+          <div id="statusMessage" class="empty-state">
+            Load the sample or paste a manifest to start.
+          </div>
+        </section>
+
+        <section class="panel stack">
+          <div class="panel-header">
+            <h2>2. Summary</h2>
+            <span class="chip">Planning view</span>
+          </div>
+
+          <div class="summary-grid">
+            <article class="summary-card">
+              <span class="summary-label">All tools</span>
+              <strong id="allToolsValue">0</strong>
+            </article>
+            <article class="summary-card accent">
+              <span class="summary-label">Selected pack</span>
+              <strong id="selectedToolsValue">0</strong>
+            </article>
+            <article class="summary-card">
+              <span class="summary-label">Est. tokens</span>
+              <strong id="allTokensValue">0</strong>
+            </article>
+            <article class="summary-card accent">
+              <span class="summary-label">Token savings</span>
+              <strong id="savingsValue">0%</strong>
+            </article>
+          </div>
+
+          <div class="summary-grid">
+            <article class="summary-card">
+              <span class="summary-label">High-risk tools</span>
+              <strong id="highRiskValue">0</strong>
+            </article>
+            <article class="summary-card">
+              <span class="summary-label">Duplicate names</span>
+              <strong id="duplicateValue">0</strong>
+            </article>
+            <article class="summary-card">
+              <span class="summary-label">Profile</span>
+              <strong id="profileValue">Balanced</strong>
+            </article>
+            <article class="summary-card">
+              <span class="summary-label">Risk budget</span>
+              <strong id="budgetValue">Medium</strong>
+            </article>
+          </div>
+
+          <div class="recommendation-box">
+            <h3>Recommendation</h3>
+            <p id="recommendationText">
+              PackMCP will explain why it picked or excluded tools here.
+            </p>
+          </div>
+
+          <div id="warningList" class="warning-list">
+            <div class="empty-state">
+              Manifest quality checks and pack warnings will appear here.
+            </div>
+          </div>
+        </section>
+
+        <section class="panel stack wide">
+          <div class="panel-header">
+            <h2>3. Strategy matrix</h2>
+            <span class="chip">Profile comparison</span>
+          </div>
+
+          <div id="profileMatrix" class="matrix-grid">
+            <div class="empty-state">Analyze a manifest to compare profiles.</div>
+          </div>
+
+          <div class="breakdown-grid">
+            <article class="breakdown-card">
+              <div class="panel-header">
+                <h3>Category coverage</h3>
+                <span class="chip">All vs selected</span>
+              </div>
+              <div id="categoryBreakdown" class="bar-list">
+                <div class="empty-state">Category coverage will appear here.</div>
+              </div>
+            </article>
+
+            <article class="breakdown-card">
+              <div class="panel-header">
+                <h3>Risk coverage</h3>
+                <span class="chip">Pack composition</span>
+              </div>
+              <div id="riskBreakdown" class="bar-list">
+                <div class="empty-state">Risk coverage will appear here.</div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel stack wide">
+          <div class="panel-header">
+            <h2>4. Tool inventory</h2>
+            <div class="toolbar">
+              <input
+                id="filterInput"
+                class="search-input"
+                type="search"
+                placeholder="Filter by name, category, or description"
+              />
+              <select id="sortSelect" class="search-input compact-select">
+                <option value="relevance">Sort by relevance</option>
+                <option value="risk">Sort by risk</option>
+                <option value="tokens">Sort by token cost</option>
+                <option value="name">Sort by name</option>
+              </select>
+              <button id="selectRecommendedButton" class="ghost-button">
+                Use recommended pack
+              </button>
+            </div>
+          </div>
+          <div id="toolList" class="tool-list">
+            <div class="empty-state">
+              No tools yet. Paste a manifest or load the sample.
+            </div>
+          </div>
+        </section>
+
+        <section class="panel stack wide">
+          <div class="panel-header">
+            <h2>5. Export</h2>
+            <span class="chip">Copyable snippets</span>
+          </div>
+          <div class="export-grid">
+            <label class="field">
+              <span>Selected tool allowlist JSON</span>
+              <textarea id="allowlistOutput" rows="8" readonly></textarea>
+              <button class="mini-button copy-button" data-copy="allowlistOutput">
+                Copy allowlist
+              </button>
+            </label>
+
+            <label class="field">
+              <span>OpenAI Agents Python snippet</span>
+              <textarea id="pythonOutput" rows="8" readonly></textarea>
+              <button class="mini-button copy-button" data-copy="pythonOutput">
+                Copy Python
+              </button>
+            </label>
+
+            <label class="field">
+              <span>TypeScript filter helper</span>
+              <textarea id="typescriptOutput" rows="8" readonly></textarea>
+              <button class="mini-button copy-button" data-copy="typescriptOutput">
+                Copy TypeScript
+              </button>
+            </label>
+
+            <label class="field">
+              <span>Pack summary markdown</span>
+              <textarea id="markdownOutput" rows="8" readonly></textarea>
+              <button class="mini-button copy-button" data-copy="markdownOutput">
+                Copy markdown
+              </button>
+            </label>
+
+            <label class="field">
+              <span>Analysis report JSON</span>
+              <textarea id="reportOutput" rows="8" readonly></textarea>
+              <button class="mini-button copy-button" data-copy="reportOutput">
+                Copy JSON report
+              </button>
+            </label>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

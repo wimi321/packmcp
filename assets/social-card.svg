@@ -1,0 +1,20 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" rx="36" fill="#EEF2EA"/>
+  <circle cx="1047" cy="112" r="172" fill="#216869" fill-opacity="0.14"/>
+  <circle cx="158" cy="520" r="220" fill="#D96D00" fill-opacity="0.10"/>
+  <rect x="72" y="72" width="1056" height="486" rx="28" fill="#FBFDF9" stroke="#D7DDD3" stroke-width="2"/>
+  <text x="110" y="156" fill="#216869" font-size="24" font-family="Avenir Next Condensed, Trebuchet MS, sans-serif" letter-spacing="6">PACKMCP</text>
+  <text x="110" y="248" fill="#17201B" font-size="72" font-family="Avenir Next Condensed, Trebuchet MS, sans-serif" font-weight="700">Build smaller, safer</text>
+  <text x="110" y="326" fill="#17201B" font-size="72" font-family="Avenir Next Condensed, Trebuchet MS, sans-serif" font-weight="700">MCP toolsets.</text>
+  <text x="110" y="392" fill="#5B675E" font-size="30" font-family="Avenir Next Condensed, Trebuchet MS, sans-serif">Analyze tool bloat, estimate token cost, flag risk, and export focused packs.</text>
+  <rect x="110" y="448" width="228" height="50" rx="25" fill="#216869" fill-opacity="0.12"/>
+  <text x="142" y="481" fill="#154E4F" font-size="24" font-family="Avenir Next Condensed, Trebuchet MS, sans-serif">Local-first planner</text>
+  <rect x="362" y="448" width="248" height="50" rx="25" fill="#216869" fill-opacity="0.12"/>
+  <text x="394" y="481" fill="#154E4F" font-size="24" font-family="Avenir Next Condensed, Trebuchet MS, sans-serif">OpenAI + MCP ready</text>
+  <rect x="780" y="168" width="276" height="232" rx="24" fill="#F6FAF6" stroke="#D7DDD3" stroke-width="2"/>
+  <rect x="816" y="214" width="204" height="36" rx="18" fill="#216869" fill-opacity="0.12"/>
+  <text x="846" y="239" fill="#154E4F" font-size="22" font-family="Avenir Next Condensed, Trebuchet MS, sans-serif">Recommended pack</text>
+  <text x="816" y="292" fill="#17201B" font-size="34" font-family="Avenir Next Condensed, Trebuchet MS, sans-serif" font-weight="700">7 tools</text>
+  <text x="816" y="334" fill="#5B675E" font-size="24" font-family="Avenir Next Condensed, Trebuchet MS, sans-serif">62% token savings</text>
+  <text x="816" y="372" fill="#5B675E" font-size="24" font-family="Avenir Next Condensed, Trebuchet MS, sans-serif">1 high-risk action removed</text>
+</svg>

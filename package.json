@@ -1,0 +1,35 @@
+{
+  "name": "packmcp",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Plan smaller, safer MCP toolsets for real agent tasks.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wimi321/packmcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wimi321/packmcp/issues"
+  },
+  "homepage": "https://github.com/wimi321/packmcp#readme",
+  "bin": {
+    "packmcp": "./bin/packmcp.mjs"
+  },
+  "scripts": {
+    "analyze:sample": "node ./bin/packmcp.mjs analyze --input ./examples/github-mcp-server.sample.json --preset review --profile balanced --risk medium --format json",
+    "cli": "node ./bin/packmcp.mjs",
+    "dev": "node ./scripts/serve.mjs",
+    "start": "node ./scripts/serve.mjs",
+    "test": "node --test ./test/core.test.mjs"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "agent",
+    "tool-filtering",
+    "toolset",
+    "openai",
+    "claude"
+  ],
+  "license": "MIT"
+}
