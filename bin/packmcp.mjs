@@ -13,6 +13,7 @@ import {
   recommendPack,
   analyzeTools
 } from "../src/core.js";
+import { maybeWriteInspectorPayload, runInspectorToolsList } from "../src/inspector.js";
 
 function printHelp() {
   console.log(`PackMCP
@@ -20,6 +21,7 @@ function printHelp() {
 Usage:
   packmcp analyze --input <file> [--task <text> | --preset <name>] [--profile <name>] [--risk <level>] [--format <json|markdown|allowlist>] [--output <file>]
   packmcp compare --left <file> --right <file> [--task <text> | --preset <name>] [--profile <name>] [--risk <level>] [--format <json|markdown>] [--output <file>]
+  packmcp inspect --config <mcp.json> --server <name> [--task <text> | --preset <name>] [--profile <name>] [--risk <level>] [--format <json|markdown|allowlist>] [--output <file>] [--manifest-output <file>] [--timeout <ms>]
 
 Options:
   --input <file>     Path to a manifest JSON file
@@ -29,6 +31,10 @@ Options:
   --risk <level>     low, medium, high
   --format <type>    json, markdown, allowlist
   --output <file>    Write output to a file instead of stdout
+  --config <file>    MCP config file for Inspector-based analysis
+  --server <name>    Server name inside the MCP config file
+  --manifest-output <file>  Save the raw Inspector tools/list payload to a file
+  --timeout <ms>     Inspector timeout in milliseconds (0 disables timeout)
   --help             Show this help text
 `);
 }
@@ -72,7 +78,7 @@ async function main() {
     return;
   }
 
-  if (command !== "analyze" && command !== "compare") {
+  if (command !== "analyze" && command !== "compare" && command !== "inspect") {
     console.error(`Unknown command: ${command}`);
     printHelp();
     process.exitCode = 1;
@@ -87,6 +93,58 @@ async function main() {
   const profile = typeof args.profile === "string" ? args.profile : "balanced";
   const risk = typeof args.risk === "string" ? args.risk : "medium";
   const format = typeof args.format === "string" ? args.format : "json";
+
+  if (command === "inspect") {
+    if (!args.config || !args.server) {
+      console.error("Missing required --config <file> or --server <name> argument.");
+      process.exitCode = 1;
+      return;
+    }
+
+    const inspectorPayload = await runInspectorToolsList({
+      configPath: args.config,
+      serverName: args.server,
+      cwd: process.cwd(),
+      timeoutMs: args.timeout
+    });
+    await maybeWriteInspectorPayload(inspectorPayload, args["manifest-output"]);
+    if (typeof args["manifest-output"] === "string" && args["manifest-output"].length > 0) {
+      console.error(`Wrote Inspector payload to ${args["manifest-output"]}`);
+    }
+
+    const parsed = parseManifest(inspectorPayload);
+    const resolvedServer = parsed.server === "custom-server" ? args.server : parsed.server;
+    const analyzed = analyzeTools(parsed.tools, task, profile);
+    const selectedIds = recommendPack(analyzed, profile, risk);
+
+    if (format === "allowlist") {
+      const exportsPayload = buildExportPayloads(resolvedServer, analyzed, selectedIds);
+      await emitOutput(exportsPayload.allowlist, args.output);
+      return;
+    }
+
+    if (format === "markdown") {
+      const exportsPayload = buildExportPayloads(resolvedServer, analyzed, selectedIds);
+      const summary = buildPackSummary(analyzed, selectedIds, profile, risk);
+      await emitOutput(`# PackMCP inspector report
+
+- Server: ${resolvedServer}
+- Source: Inspector CLI
+- Profile: ${profile}
+- Risk budget: ${risk}
+- Selected tools: ${summary.selectedCount}
+- Token savings: ${summary.savings}%
+
+${summary.recommendation}
+
+${exportsPayload.markdown}`, args.output);
+      return;
+    }
+
+    const report = buildAnalysisReport(resolvedServer, parsed.tools, task, profile, risk, selectedIds);
+    await emitOutput(JSON.stringify(report, null, 2), args.output);
+    return;
+  }
 
   if (command === "compare") {
     if (!args.left || !args.right) {

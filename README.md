@@ -15,6 +15,7 @@ Instead of handing every tool to the agent, PackMCP lets you:
 - export a tighter allowlist for Python and TypeScript runtimes
 - run the same analysis from the CLI for scripts and CI
 - compare two MCP manifests before migration or rollout
+- analyze a real `mcp.json` server through the official MCP Inspector CLI
 
 ## Why this matters
 
@@ -34,6 +35,7 @@ PackMCP is built for that layer.
 - recommended pack generation by profile and risk budget
 - copyable exports for allowlists and SDK filters
 - optional multi-manifest comparison mode
+- official MCP Inspector CLI integration for live server analysis
 - sample manifest and testable core logic
 
 ## Quickstart
@@ -62,6 +64,12 @@ And compare two manifests:
 npm run compare:sample
 ```
 
+You can also exercise the Inspector path with a fixture:
+
+```bash
+npm run inspect:sample
+```
+
 ## Project structure
 
 - `index.html` app shell
@@ -69,6 +77,7 @@ npm run compare:sample
 - `src/app.js` browser UI controller
 - `src/core.js` scoring, recommendation, export logic
 - `src/data.js` presets and sample data
+- `src/inspector.js` MCP Inspector CLI bridge
 - `examples/github-mcp-server.sample.json` example input
 - `test/core.test.mjs` regression tests
 - `scripts/serve.mjs` zero-dependency dev server
@@ -82,6 +91,7 @@ npm run compare:sample
 - Compare how much schema/token cost you save by curating a smaller pack.
 - Generate a structured JSON report in CI before approving an MCP server rollout.
 - Compare two MCP servers or two versions of the same server before migration.
+- Pull a real server's `tools/list` through MCP Inspector and analyze it immediately.
 
 ## Design principles
 
@@ -97,7 +107,7 @@ npm run compare:sample
 - no live MCP transport or proxy yet
 - no schema compression beyond lightweight heuristics
 - no client-specific config generators beyond simple snippets
-- no side-by-side server comparison yet
+- no browser-based comparison history yet
 
 ## CLI example
 
@@ -134,9 +144,29 @@ packmcp compare \
   --format json
 ```
 
+Analyze a real `mcp.json` server entry through MCP Inspector:
+
+```bash
+packmcp inspect \
+  --config ./examples/mcp.json.sample \
+  --server github \
+  --preset review \
+  --profile balanced \
+  --risk medium \
+  --format json \
+  --timeout 45000 \
+  --manifest-output ./inspector-tools.json
+```
+
+This command follows the official Inspector CLI shape using `--cli --config ... --server ... --method tools/list`.
+
+PackMCP applies a `30000ms` Inspector timeout by default so CI and local scripts do not hang forever if the target server fails to boot. Pass `--timeout 0` to disable the guardrail for slower servers.
+
+The bundled `examples/mcp.json.sample` file uses placeholder credentials. Use real values for a live run, or stick with `npm run inspect:sample` for an offline fixture-based smoke test.
+
 ## Next upgrades
 
-- ingest MCP Inspector exports directly
+- add direct Inspector export import in the browser UI
 - add runtime proxy mode for enforcement
 - compare multiple manifests side by side with diff history
 - improve token estimation using schema-aware compression rules

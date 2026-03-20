@@ -50,7 +50,7 @@ export function getRiskTone(level) {
 }
 
 export function parseManifest(input) {
-  const parsed = JSON.parse(input);
+  const parsed = typeof input === "string" ? JSON.parse(input) : input;
   if (Array.isArray(parsed)) {
     return { server: "custom-server", tools: parsed };
   }

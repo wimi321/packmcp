@@ -18,6 +18,7 @@
   "scripts": {
     "analyze:sample": "node ./bin/packmcp.mjs analyze --input ./examples/github-mcp-server.sample.json --preset review --profile balanced --risk medium --format json",
     "compare:sample": "node ./bin/packmcp.mjs compare --left ./examples/github-mcp-server.sample.json --right ./examples/browser-ops.sample.json --preset coding --profile coding --risk medium --format json",
+    "inspect:sample": "PACKMCP_INSPECTOR_FIXTURE=./examples/inspector-tools-list.sample.json node ./bin/packmcp.mjs inspect --config ./examples/mcp.json.sample --server github --preset review --profile balanced --risk medium --format json",
     "cli": "node ./bin/packmcp.mjs",
     "dev": "node ./scripts/serve.mjs",
     "start": "node ./scripts/serve.mjs",

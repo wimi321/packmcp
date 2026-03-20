@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import { SAMPLE_MANIFEST } from "../src/data.js";
 import {
@@ -12,7 +16,11 @@ import {
   parseManifest,
   recommendPack
 } from "../src/core.js";
-import { execFileSync } from "node:child_process";
+import {
+  buildInspectorInvocation,
+  DEFAULT_INSPECTOR_TIMEOUT_MS,
+  resolveInspectorTimeoutMs
+} from "../src/inspector.js";
 
 test("parseManifest accepts tools/list result payloads", () => {
   const payload = JSON.stringify({
@@ -184,4 +192,118 @@ test("CLI compare outputs JSON comparison report", () => {
   const parsed = JSON.parse(output);
   assert.equal(parsed.left.server, "github-mcp-server");
   assert.equal(parsed.right.server, "browser-ops-mcp");
+});
+
+test("parseManifest accepts already-parsed payloads", () => {
+  const parsed = parseManifest({
+    result: {
+      server: "fixture-server",
+      tools: SAMPLE_MANIFEST.tools
+    }
+  });
+
+  assert.equal(parsed.server, "fixture-server");
+  assert.equal(parsed.tools.length, SAMPLE_MANIFEST.tools.length);
+});
+
+test("buildInspectorInvocation uses the official Inspector CLI shape", () => {
+  const invocation = buildInspectorInvocation({
+    configPath: "./examples/mcp.json.sample",
+    serverName: "github"
+  });
+
+  assert.equal(invocation.command, "npx");
+  assert.ok(invocation.args.includes("--cli"));
+  assert.ok(invocation.args.includes("--config"));
+  assert.ok(invocation.args.includes("--server"));
+});
+
+test("resolveInspectorTimeoutMs supports defaults, overrides, and disabled timeout", () => {
+  assert.equal(resolveInspectorTimeoutMs(undefined), DEFAULT_INSPECTOR_TIMEOUT_MS);
+  assert.equal(resolveInspectorTimeoutMs("45000"), 45_000);
+  assert.equal(resolveInspectorTimeoutMs("0"), 0);
+  assert.throws(() => resolveInspectorTimeoutMs("-5"), /non-negative integer/);
+});
+
+test("CLI inspect uses fixture payload and outputs analysis", () => {
+  const output = execFileSync(
+    "node",
+    [
+      "./bin/packmcp.mjs",
+      "inspect",
+      "--config",
+      "./examples/mcp.json.sample",
+      "--server",
+      "github",
+      "--preset",
+      "review",
+      "--profile",
+      "balanced",
+      "--risk",
+      "medium",
+      "--format",
+      "json"
+    ],
+    {
+      cwd: new URL("../", import.meta.url),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PACKMCP_INSPECTOR_FIXTURE: "./examples/inspector-tools-list.sample.json"
+      }
+    }
+  );
+
+  const parsed = JSON.parse(output);
+  assert.equal(parsed.server, "github");
+  assert.ok(parsed.summary.selectedCount > 0);
+});
+
+test("CLI inspect writes both Inspector payload and report files", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "packmcp-inspect-"));
+  const manifestOutput = join(tempDir, "manifest.json");
+  const reportOutput = join(tempDir, "report.json");
+  const result = spawnSync(
+    "node",
+    [
+      "./bin/packmcp.mjs",
+      "inspect",
+      "--config",
+      "./examples/mcp.json.sample",
+      "--server",
+      "github",
+      "--preset",
+      "review",
+      "--profile",
+      "balanced",
+      "--risk",
+      "medium",
+      "--format",
+      "json",
+      "--manifest-output",
+      manifestOutput,
+      "--output",
+      reportOutput,
+      "--timeout",
+      "12000"
+    ],
+    {
+      cwd: new URL("../", import.meta.url),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PACKMCP_INSPECTOR_FIXTURE: "./examples/inspector-tools-list.sample.json"
+      }
+    }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /Wrote Inspector payload/);
+  assert.match(result.stderr, /Wrote output/);
+
+  const manifest = JSON.parse(await readFile(manifestOutput, "utf8"));
+  const report = JSON.parse(await readFile(reportOutput, "utf8"));
+  assert.ok(Array.isArray(manifest.result.tools));
+  assert.equal(report.server, "github");
+  assert.ok(report.summary.selectedCount > 0);
 });
