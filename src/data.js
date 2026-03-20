@@ -336,6 +336,7 @@ export const READ_WORDS = ["get", "list", "read", "search", "fetch", "inspect", 
 
 export const COPY_LABELS = {
   allowlistOutput: "Copy allowlist",
+  packOutput: "Copy pack JSON",
   pythonOutput: "Copy Python",
   typescriptOutput: "Copy TypeScript",
   markdownOutput: "Copy markdown",

@@ -12,6 +12,7 @@ Instead of handing every tool to the agent, PackMCP lets you:
 - estimate how much tool metadata costs in context tokens
 - spot risky write, merge, deploy, or dispatch tools early
 - score tools against a concrete task and pack profile
+- generate a reusable PackMCP pack JSON with only the selected tools
 - export a tighter allowlist for Python and TypeScript runtimes
 - run the same analysis from the CLI for scripts and CI
 - compare two MCP manifests before migration or rollout
@@ -34,6 +35,7 @@ PackMCP is built for that layer.
 - risk classification and warning cards
 - recommended pack generation by profile and risk budget
 - copyable exports for allowlists and SDK filters
+- reusable pack artifact export for downstream enforcement or review flows
 - optional multi-manifest comparison mode
 - official MCP Inspector CLI integration for live server analysis
 - sample manifest and testable core logic
@@ -56,6 +58,12 @@ You can run a CLI analysis too:
 
 ```bash
 npm run analyze:sample
+```
+
+Or generate a reusable pack artifact:
+
+```bash
+npm run pack:sample
 ```
 
 And compare two manifests:
@@ -132,6 +140,18 @@ packmcp analyze \
   --output ./packmcp-report.json
 ```
 
+Generate a filtered PackMCP pack artifact you can re-import later:
+
+```bash
+packmcp analyze \
+  --input ./examples/github-mcp-server.sample.json \
+  --preset review \
+  --profile balanced \
+  --risk medium \
+  --format pack \
+  --output ./github-review.pack.json
+```
+
 Compare two manifests:
 
 ```bash
@@ -163,6 +183,8 @@ This command follows the official Inspector CLI shape using `--cli --config ... 
 PackMCP applies a `30000ms` Inspector timeout by default so CI and local scripts do not hang forever if the target server fails to boot. Pass `--timeout 0` to disable the guardrail for slower servers.
 
 The bundled `examples/mcp.json.sample` file uses placeholder credentials. Use real values for a live run, or stick with `npm run inspect:sample` for an offline fixture-based smoke test.
+
+The `pack` export keeps the selected tools in a normalized `{ server, tools }`-compatible shape, so you can version it in git, feed it back into PackMCP later, or hand it off to a future runtime proxy layer.
 
 ## Next upgrades
 

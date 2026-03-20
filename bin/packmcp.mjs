@@ -19,9 +19,9 @@ function printHelp() {
   console.log(`PackMCP
 
 Usage:
-  packmcp analyze --input <file> [--task <text> | --preset <name>] [--profile <name>] [--risk <level>] [--format <json|markdown|allowlist>] [--output <file>]
+  packmcp analyze --input <file> [--task <text> | --preset <name>] [--profile <name>] [--risk <level>] [--format <json|markdown|allowlist|pack>] [--output <file>]
   packmcp compare --left <file> --right <file> [--task <text> | --preset <name>] [--profile <name>] [--risk <level>] [--format <json|markdown>] [--output <file>]
-  packmcp inspect --config <mcp.json> --server <name> [--task <text> | --preset <name>] [--profile <name>] [--risk <level>] [--format <json|markdown|allowlist>] [--output <file>] [--manifest-output <file>] [--timeout <ms>]
+  packmcp inspect --config <mcp.json> --server <name> [--task <text> | --preset <name>] [--profile <name>] [--risk <level>] [--format <json|markdown|allowlist|pack>] [--output <file>] [--manifest-output <file>] [--timeout <ms>]
 
 Options:
   --input <file>     Path to a manifest JSON file
@@ -29,7 +29,7 @@ Options:
   --preset <name>    Task preset: review, coding, release, browser
   --profile <name>   balanced, read-only, coding, release, browser
   --risk <level>     low, medium, high
-  --format <type>    json, markdown, allowlist
+  --format <type>    json, markdown, allowlist, pack
   --output <file>    Write output to a file instead of stdout
   --config <file>    MCP config file for Inspector-based analysis
   --server <name>    Server name inside the MCP config file
@@ -117,14 +117,16 @@ async function main() {
     const analyzed = analyzeTools(parsed.tools, task, profile);
     const selectedIds = recommendPack(analyzed, profile, risk);
 
-    if (format === "allowlist") {
+    if (format === "allowlist" || format === "pack" || format === "markdown") {
       const exportsPayload = buildExportPayloads(resolvedServer, analyzed, selectedIds);
-      await emitOutput(exportsPayload.allowlist, args.output);
-      return;
-    }
-
-    if (format === "markdown") {
-      const exportsPayload = buildExportPayloads(resolvedServer, analyzed, selectedIds);
+      if (format === "allowlist") {
+        await emitOutput(exportsPayload.allowlist, args.output);
+        return;
+      }
+      if (format === "pack") {
+        await emitOutput(exportsPayload.pack, args.output);
+        return;
+      }
       const summary = buildPackSummary(analyzed, selectedIds, profile, risk);
       await emitOutput(`# PackMCP inspector report
 
@@ -198,14 +200,16 @@ ${report.overlap.sharedSelectedNames.join(", ") || "None"}
   const analyzed = analyzeTools(parsed.tools, task, profile);
   const selectedIds = recommendPack(analyzed, profile, risk);
 
-  if (format === "allowlist") {
+  if (format === "allowlist" || format === "pack" || format === "markdown") {
     const exportsPayload = buildExportPayloads(parsed.server, analyzed, selectedIds);
-    await emitOutput(exportsPayload.allowlist, args.output);
-    return;
-  }
-
-  if (format === "markdown") {
-    const exportsPayload = buildExportPayloads(parsed.server, analyzed, selectedIds);
+    if (format === "allowlist") {
+      await emitOutput(exportsPayload.allowlist, args.output);
+      return;
+    }
+    if (format === "pack") {
+      await emitOutput(exportsPayload.pack, args.output);
+      return;
+    }
     const summary = buildPackSummary(analyzed, selectedIds, profile, risk);
     await emitOutput(`# PackMCP report
 

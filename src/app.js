@@ -57,6 +57,7 @@ const el = {
   riskBreakdown: document.querySelector("#riskBreakdown"),
   comparisonPanel: document.querySelector("#comparisonPanel"),
   allowlistOutput: document.querySelector("#allowlistOutput"),
+  packOutput: document.querySelector("#packOutput"),
   pythonOutput: document.querySelector("#pythonOutput"),
   typescriptOutput: document.querySelector("#typescriptOutput"),
   markdownOutput: document.querySelector("#markdownOutput"),
@@ -311,6 +312,7 @@ function updateExports() {
     state.selectedIds
   );
   el.allowlistOutput.value = payloads.allowlist;
+  el.packOutput.value = payloads.pack;
   el.pythonOutput.value = payloads.python;
   el.typescriptOutput.value = payloads.typescript;
   el.markdownOutput.value = payloads.markdown;

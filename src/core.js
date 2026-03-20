@@ -193,6 +193,7 @@ export function analyzeTools(rawTools, task, profileKey) {
       name,
       description,
       inputSchema: tool.inputSchema || {},
+      rawTool: tool,
       category,
       risk,
       readHeavy,
@@ -571,13 +572,34 @@ export function buildComparisonReport(leftManifest, rightManifest, task, profile
   };
 }
 
+export function buildPackArtifact(serverName, tools, selectedIds) {
+  const selectedTools = tools.filter((tool) => selectedIds.has(tool.id));
+  const selectedNames = [...new Set(selectedTools.map((tool) => tool.name))];
+
+  return {
+    version: 1,
+    kind: "packmcp-pack",
+    server: serverName,
+    selectedToolNames: selectedNames,
+    estimatedTokenCost: selectedTools.reduce((sum, tool) => sum + tool.estimatedTokens, 0),
+    tools: selectedTools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+      ...(tool.rawTool || {})
+    }))
+  };
+}
+
 export function buildExportPayloads(serverName, tools, selectedIds) {
   const selectedTools = tools.filter((tool) => selectedIds.has(tool.id));
   const selectedNames = [...new Set(selectedTools.map((tool) => tool.name))];
   const selectedTokenCost = selectedTools.reduce((sum, tool) => sum + tool.estimatedTokens, 0);
+  const packArtifact = buildPackArtifact(serverName, tools, selectedIds);
 
   return {
     allowlist: JSON.stringify(selectedNames, null, 2),
+    pack: JSON.stringify(packArtifact, null, 2),
     python: `from agents.mcp import create_static_tool_filter\n\nselected_tools = ${JSON.stringify(selectedNames, null, 2)}\ntool_filter = create_static_tool_filter(selected_tools)\n# Pass tool_filter when creating your MCP server connection.`,
     typescript: `const selectedTools = ${JSON.stringify(selectedNames, null, 2)};\n\nexport function allowOnlySelectedTools(tool) {\n  return selectedTools.includes(tool.name);\n}\n\n// Example: filter tools before exposing them to the agent runtime.`,
     markdown: [

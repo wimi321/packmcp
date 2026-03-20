@@ -10,6 +10,7 @@ import {
   analyzeTools,
   buildAnalysisReport,
   buildComparisonReport,
+  buildPackArtifact,
   buildProfileMatrix,
   buildExportPayloads,
   buildPackSummary,
@@ -74,7 +75,28 @@ test("buildPackSummary and exports reflect the selected pack", () => {
   assert.ok(summary.selectedCount > 0);
   assert.ok(typeof summary.recommendation === "string");
   assert.ok(exportsPayload.allowlist.includes("["));
+  const packArtifact = JSON.parse(exportsPayload.pack);
+  assert.equal(packArtifact.kind, "packmcp-pack");
+  assert.equal(packArtifact.tools.length, summary.selectedCount);
   assert.ok(exportsPayload.python.includes("create_static_tool_filter"));
+});
+
+test("buildPackArtifact preserves selected tool definitions", () => {
+  const analyzed = analyzeTools(
+    SAMPLE_MANIFEST.tools,
+    "Read issues and inspect code safely.",
+    "read-only"
+  );
+  const selectedIds = recommendPack(analyzed, "read-only", "low");
+  const artifact = buildPackArtifact("github-mcp-server", analyzed, selectedIds);
+
+  assert.equal(artifact.kind, "packmcp-pack");
+  assert.ok(Array.isArray(artifact.tools));
+  assert.ok(artifact.tools.length > 0);
+  assert.deepEqual(
+    artifact.selectedToolNames,
+    artifact.tools.map((tool) => tool.name)
+  );
 });
 
 test("buildAnalysisReport includes profile matrix and structured exports", () => {
@@ -130,6 +152,36 @@ test("CLI analyze outputs JSON report", () => {
   const parsed = JSON.parse(output);
   assert.equal(parsed.server, "github-mcp-server");
   assert.ok(parsed.summary.selectedCount > 0);
+});
+
+test("CLI analyze outputs a reusable pack artifact", () => {
+  const output = execFileSync(
+    "node",
+    [
+      "./bin/packmcp.mjs",
+      "analyze",
+      "--input",
+      "./examples/github-mcp-server.sample.json",
+      "--preset",
+      "review",
+      "--profile",
+      "balanced",
+      "--risk",
+      "medium",
+      "--format",
+      "pack"
+    ],
+    {
+      cwd: new URL("../", import.meta.url),
+      encoding: "utf8"
+    }
+  );
+
+  const parsed = JSON.parse(output);
+  assert.equal(parsed.kind, "packmcp-pack");
+  assert.equal(parsed.server, "github-mcp-server");
+  assert.ok(Array.isArray(parsed.tools));
+  assert.ok(parsed.tools.length > 0);
 });
 
 test("buildComparisonReport highlights overlap and pack differences", () => {
