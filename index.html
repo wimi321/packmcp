@@ -103,6 +103,22 @@
           </div>
 
           <label class="field">
+            <span>Optional saved pack JSON or allowlist</span>
+            <textarea
+              id="savedPackInput"
+              rows="6"
+              placeholder='Paste a PackMCP pack JSON, a `{ "tools": [...] }` object, or a `["tool_name"]` allowlist to replay it against the current manifest.'
+            ></textarea>
+          </label>
+
+          <div class="input-grid">
+            <label class="field compact">
+              <span>Upload saved pack JSON</span>
+              <input id="packFileInput" type="file" accept=".json,application/json" />
+            </label>
+          </div>
+
+          <label class="field">
             <span>Optional comparison manifest JSON</span>
             <textarea
               id="compareManifestInput"
@@ -172,6 +188,12 @@
             <p id="recommendationText">
               PackMCP will explain why it picked or excluded tools here.
             </p>
+          </div>
+
+          <div id="selectionSummary" class="selection-summary">
+            <div class="empty-state">
+              Load a saved pack or allowlist to replay it against the current manifest.
+            </div>
           </div>
 
           <div id="warningList" class="warning-list">

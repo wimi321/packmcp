@@ -5,10 +5,12 @@ import process from "node:process";
 
 import { TASK_PRESETS } from "../src/data.js";
 import {
+  applyPackSelection,
   buildAnalysisReport,
   buildComparisonReport,
   buildExportPayloads,
   buildPackSummary,
+  parsePackSelection,
   parseManifest,
   recommendPack,
   analyzeTools
@@ -19,9 +21,9 @@ function printHelp() {
   console.log(`PackMCP
 
 Usage:
-  packmcp analyze --input <file> [--task <text> | --preset <name>] [--profile <name>] [--risk <level>] [--format <json|markdown|allowlist|pack>] [--output <file>]
+  packmcp analyze --input <file> [--task <text> | --preset <name>] [--profile <name>] [--risk <level>] [--format <json|markdown|allowlist|pack>] [--pack <file>] [--strict] [--output <file>]
   packmcp compare --left <file> --right <file> [--task <text> | --preset <name>] [--profile <name>] [--risk <level>] [--format <json|markdown>] [--output <file>]
-  packmcp inspect --config <mcp.json> --server <name> [--task <text> | --preset <name>] [--profile <name>] [--risk <level>] [--format <json|markdown|allowlist|pack>] [--output <file>] [--manifest-output <file>] [--timeout <ms>]
+  packmcp inspect --config <mcp.json> --server <name> [--task <text> | --preset <name>] [--profile <name>] [--risk <level>] [--format <json|markdown|allowlist|pack>] [--pack <file>] [--strict] [--output <file>] [--manifest-output <file>] [--timeout <ms>]
 
 Options:
   --input <file>     Path to a manifest JSON file
@@ -30,6 +32,8 @@ Options:
   --profile <name>   balanced, read-only, coding, release, browser
   --risk <level>     low, medium, high
   --format <type>    json, markdown, allowlist, pack
+  --pack <file>      Reapply a saved PackMCP pack or allowlist to the current manifest
+  --strict           Exit non-zero if a saved pack references missing tool names
   --output <file>    Write output to a file instead of stdout
   --config <file>    MCP config file for Inspector-based analysis
   --server <name>    Server name inside the MCP config file
@@ -69,6 +73,57 @@ async function emitOutput(content, outputPath) {
   console.log(content);
 }
 
+async function resolveSelection(args, analyzed) {
+  const recommendedIds = recommendPack(analyzed, args.profileKey, args.riskBudgetKey);
+
+  if (!args.pack) {
+    return {
+      recommendedIds,
+      selectedIds: recommendedIds,
+      selectionContext: undefined
+    };
+  }
+
+  const savedPackInput = await readFile(args.pack, "utf8");
+  const parsedPack = parsePackSelection(savedPackInput);
+  const applied = applyPackSelection(analyzed, parsedPack, recommendedIds);
+
+  return {
+    recommendedIds,
+    selectedIds: applied.selectedIds,
+    selectionContext: applied.selectionContext
+  };
+}
+
+function maybeApplyStrictMode(args, selectionContext) {
+  if (!args.strict || !selectionContext || selectionContext.source !== "pack") {
+    return;
+  }
+
+  if (selectionContext.missingNames.length > 0) {
+    console.error(
+      `Strict mode failed: ${selectionContext.missingNames.length} saved tool names are missing: ${selectionContext.missingNames.join(", ")}`
+    );
+    process.exitCode = 1;
+  }
+}
+
+function renderSelectionLines(selectionContext) {
+  if (!selectionContext || selectionContext.source !== "pack") {
+    return "";
+  }
+
+  const missing = selectionContext.missingNames.length > 0
+    ? selectionContext.missingNames.join(", ")
+    : "None";
+
+  return [
+    `- Selection source: saved ${selectionContext.format}`,
+    `- Pack replay: ${selectionContext.matchedToolNameCount}/${selectionContext.requestedToolNameCount} requested names matched`,
+    `- Missing tool names: ${missing}`
+  ].join("\n");
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const command = args._[0];
@@ -93,6 +148,18 @@ async function main() {
   const profile = typeof args.profile === "string" ? args.profile : "balanced";
   const risk = typeof args.risk === "string" ? args.risk : "medium";
   const format = typeof args.format === "string" ? args.format : "json";
+  const selectionArgs = {
+    pack: typeof args.pack === "string" ? args.pack : undefined,
+    strict: Boolean(args.strict),
+    profileKey: profile,
+    riskBudgetKey: risk
+  };
+
+  if (args.strict && !args.pack) {
+    console.error("The --strict flag requires --pack <file>.");
+    process.exitCode = 1;
+    return;
+  }
 
   if (command === "inspect") {
     if (!args.config || !args.server) {
@@ -115,19 +182,22 @@ async function main() {
     const parsed = parseManifest(inspectorPayload);
     const resolvedServer = parsed.server === "custom-server" ? args.server : parsed.server;
     const analyzed = analyzeTools(parsed.tools, task, profile);
-    const selectedIds = recommendPack(analyzed, profile, risk);
+    const { selectedIds, selectionContext } = await resolveSelection(selectionArgs, analyzed);
 
     if (format === "allowlist" || format === "pack" || format === "markdown") {
       const exportsPayload = buildExportPayloads(resolvedServer, analyzed, selectedIds);
       if (format === "allowlist") {
         await emitOutput(exportsPayload.allowlist, args.output);
+        maybeApplyStrictMode(selectionArgs, selectionContext);
         return;
       }
       if (format === "pack") {
         await emitOutput(exportsPayload.pack, args.output);
+        maybeApplyStrictMode(selectionArgs, selectionContext);
         return;
       }
-      const summary = buildPackSummary(analyzed, selectedIds, profile, risk);
+      const summary = buildPackSummary(analyzed, selectedIds, profile, risk, selectionContext);
+      const selectionLines = renderSelectionLines(selectionContext);
       await emitOutput(`# PackMCP inspector report
 
 - Server: ${resolvedServer}
@@ -136,15 +206,26 @@ async function main() {
 - Risk budget: ${risk}
 - Selected tools: ${summary.selectedCount}
 - Token savings: ${summary.savings}%
+${selectionLines ? `${selectionLines}\n` : ""}
 
 ${summary.recommendation}
 
 ${exportsPayload.markdown}`, args.output);
+      maybeApplyStrictMode(selectionArgs, selectionContext);
       return;
     }
 
-    const report = buildAnalysisReport(resolvedServer, parsed.tools, task, profile, risk, selectedIds);
+    const report = buildAnalysisReport(
+      resolvedServer,
+      parsed.tools,
+      task,
+      profile,
+      risk,
+      selectedIds,
+      selectionContext
+    );
     await emitOutput(JSON.stringify(report, null, 2), args.output);
+    maybeApplyStrictMode(selectionArgs, selectionContext);
     return;
   }
 
@@ -198,19 +279,22 @@ ${report.overlap.sharedSelectedNames.join(", ") || "None"}
   const input = await readFile(args.input, "utf8");
   const parsed = parseManifest(input);
   const analyzed = analyzeTools(parsed.tools, task, profile);
-  const selectedIds = recommendPack(analyzed, profile, risk);
+  const { selectedIds, selectionContext } = await resolveSelection(selectionArgs, analyzed);
 
   if (format === "allowlist" || format === "pack" || format === "markdown") {
     const exportsPayload = buildExportPayloads(parsed.server, analyzed, selectedIds);
     if (format === "allowlist") {
       await emitOutput(exportsPayload.allowlist, args.output);
+      maybeApplyStrictMode(selectionArgs, selectionContext);
       return;
     }
     if (format === "pack") {
       await emitOutput(exportsPayload.pack, args.output);
+      maybeApplyStrictMode(selectionArgs, selectionContext);
       return;
     }
-    const summary = buildPackSummary(analyzed, selectedIds, profile, risk);
+    const summary = buildPackSummary(analyzed, selectedIds, profile, risk, selectionContext);
+    const selectionLines = renderSelectionLines(selectionContext);
     await emitOutput(`# PackMCP report
 
 - Server: ${parsed.server}
@@ -218,15 +302,26 @@ ${report.overlap.sharedSelectedNames.join(", ") || "None"}
 - Risk budget: ${risk}
 - Selected tools: ${summary.selectedCount}
 - Token savings: ${summary.savings}%
+${selectionLines ? `${selectionLines}\n` : ""}
 
 ${summary.recommendation}
 
 ${exportsPayload.markdown}`, args.output);
+    maybeApplyStrictMode(selectionArgs, selectionContext);
     return;
   }
 
-  const report = buildAnalysisReport(parsed.server, parsed.tools, task, profile, risk, selectedIds);
+  const report = buildAnalysisReport(
+    parsed.server,
+    parsed.tools,
+    task,
+    profile,
+    risk,
+    selectedIds,
+    selectionContext
+  );
   await emitOutput(JSON.stringify(report, null, 2), args.output);
+  maybeApplyStrictMode(selectionArgs, selectionContext);
 }
 
 main().catch((error) => {

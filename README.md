@@ -13,6 +13,7 @@ Instead of handing every tool to the agent, PackMCP lets you:
 - spot risky write, merge, deploy, or dispatch tools early
 - score tools against a concrete task and pack profile
 - generate a reusable PackMCP pack JSON with only the selected tools
+- replay a saved pack or allowlist against a newer manifest and detect drift
 - export a tighter allowlist for Python and TypeScript runtimes
 - run the same analysis from the CLI for scripts and CI
 - compare two MCP manifests before migration or rollout
@@ -36,6 +37,7 @@ PackMCP is built for that layer.
 - recommended pack generation by profile and risk budget
 - copyable exports for allowlists and SDK filters
 - reusable pack artifact export for downstream enforcement or review flows
+- saved pack replay with drift warnings and optional strict CI failure mode
 - optional multi-manifest comparison mode
 - official MCP Inspector CLI integration for live server analysis
 - sample manifest and testable core logic
@@ -66,6 +68,12 @@ Or generate a reusable pack artifact:
 npm run pack:sample
 ```
 
+Replay a saved pack against the latest manifest:
+
+```bash
+npm run replay:sample
+```
+
 And compare two manifests:
 
 ```bash
@@ -87,6 +95,7 @@ npm run inspect:sample
 - `src/data.js` presets and sample data
 - `src/inspector.js` MCP Inspector CLI bridge
 - `examples/github-mcp-server.sample.json` example input
+- `examples/github-review.pack.json` example saved pack artifact
 - `test/core.test.mjs` regression tests
 - `scripts/serve.mjs` zero-dependency dev server
 - `bin/packmcp.mjs` CLI entrypoint
@@ -98,6 +107,7 @@ npm run inspect:sample
 - Review a vendor MCP manifest and surface high-risk tools before rollout.
 - Compare how much schema/token cost you save by curating a smaller pack.
 - Generate a structured JSON report in CI before approving an MCP server rollout.
+- Replay a saved pack during CI to catch upstream MCP drift before agents see it.
 - Compare two MCP servers or two versions of the same server before migration.
 - Pull a real server's `tools/list` through MCP Inspector and analyze it immediately.
 
@@ -152,6 +162,19 @@ packmcp analyze \
   --output ./github-review.pack.json
 ```
 
+Replay a saved pack against a newer manifest and fail CI if tools disappeared:
+
+```bash
+packmcp analyze \
+  --input ./examples/github-mcp-server.sample.json \
+  --preset review \
+  --profile balanced \
+  --risk medium \
+  --pack ./examples/github-review.pack.json \
+  --strict \
+  --format json
+```
+
 Compare two manifests:
 
 ```bash
@@ -186,10 +209,12 @@ The bundled `examples/mcp.json.sample` file uses placeholder credentials. Use re
 
 The `pack` export keeps the selected tools in a normalized `{ server, tools }`-compatible shape, so you can version it in git, feed it back into PackMCP later, or hand it off to a future runtime proxy layer.
 
+When you pass `--pack`, PackMCP replays the saved selection against the current manifest or live Inspector result, reports missing tool names, highlights where today's recommendation changed, and can exit non-zero with `--strict` for CI gating.
+
 ## Next upgrades
 
-- add direct Inspector export import in the browser UI
 - add runtime proxy mode for enforcement
+- add direct Inspector export import in the browser UI
 - compare multiple manifests side by side with diff history
 - improve token estimation using schema-aware compression rules
 - generate client-specific configs for more runtimes

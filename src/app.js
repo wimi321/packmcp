@@ -1,5 +1,6 @@
 import { COMPARISON_MANIFEST, COPY_LABELS, PROFILE_CONFIG, SAMPLE_MANIFEST, TASK_PRESETS } from "./data.js";
 import {
+  applyPackSelection,
   analyzeTools,
   buildAnalysisReport,
   buildCategoryBreakdown,
@@ -10,6 +11,7 @@ import {
   buildRiskBreakdown,
   formatRisk,
   getRiskTone,
+  parsePackSelection,
   parseManifest,
   recommendPack,
   sortTools,
@@ -24,15 +26,18 @@ const state = {
   recommendedIds: new Set(),
   serverName: "custom-server",
   comparisonServerName: "",
-  comparisonReport: null
+  comparisonReport: null,
+  selectionContext: null
 };
 
 const el = {
   manifestInput: document.querySelector("#manifestInput"),
   compareManifestInput: document.querySelector("#compareManifestInput"),
+  savedPackInput: document.querySelector("#savedPackInput"),
   taskInput: document.querySelector("#taskInput"),
   fileInput: document.querySelector("#fileInput"),
   compareFileInput: document.querySelector("#compareFileInput"),
+  packFileInput: document.querySelector("#packFileInput"),
   profileSelect: document.querySelector("#profileSelect"),
   riskBudgetSelect: document.querySelector("#riskBudgetSelect"),
   sortSelect: document.querySelector("#sortSelect"),
@@ -51,6 +56,7 @@ const el = {
   profileValue: document.querySelector("#profileValue"),
   budgetValue: document.querySelector("#budgetValue"),
   recommendationText: document.querySelector("#recommendationText"),
+  selectionSummary: document.querySelector("#selectionSummary"),
   warningList: document.querySelector("#warningList"),
   profileMatrix: document.querySelector("#profileMatrix"),
   categoryBreakdown: document.querySelector("#categoryBreakdown"),
@@ -85,11 +91,23 @@ function copyWithFallback(text) {
 
 function formatToolCard(tool) {
   const checked = state.selectedIds.has(tool.id) ? "checked" : "";
-  const selectionBadge = state.recommendedIds.has(tool.id)
-    ? '<span class="badge" data-tone="accent">Recommended</span>'
-    : state.selectedIds.has(tool.id)
-      ? '<span class="badge" data-tone="warning">Custom</span>'
-      : "";
+  let selectionBadge = "";
+
+  if (state.selectionContext?.source === "pack") {
+    if (state.selectedIds.has(tool.id) && state.recommendedIds.has(tool.id)) {
+      selectionBadge = '<span class="badge" data-tone="accent">Saved + recommended</span>';
+    } else if (state.selectedIds.has(tool.id)) {
+      selectionBadge = '<span class="badge" data-tone="warning">Saved pack</span>';
+    } else if (state.recommendedIds.has(tool.id)) {
+      selectionBadge = '<span class="badge" data-tone="accent">Recommended now</span>';
+    }
+  } else {
+    selectionBadge = state.recommendedIds.has(tool.id)
+      ? '<span class="badge" data-tone="accent">Recommended</span>'
+      : state.selectedIds.has(tool.id)
+        ? '<span class="badge" data-tone="warning">Custom</span>'
+        : "";
+  }
   const reasons = tool.reasons.length > 0 ? tool.reasons.join(" · ") : "No strong task-specific signals.";
 
   return `
@@ -286,7 +304,8 @@ function updateSummary() {
     state.analyzedTools,
     state.selectedIds,
     el.profileSelect.value,
-    el.riskBudgetSelect.value
+    el.riskBudgetSelect.value,
+    state.selectionContext
   );
 
   el.allToolsValue.textContent = String(summary.allTools);
@@ -301,6 +320,37 @@ function updateSummary() {
   renderWarnings(summary);
 }
 
+function renderSelectionSummary() {
+  if (!state.selectionContext || state.selectionContext.source !== "pack") {
+    el.selectionSummary.innerHTML = '<div class="empty-state">Load a saved pack or allowlist to replay it against the current manifest.</div>';
+    return;
+  }
+
+  const context = state.selectionContext;
+  const missing = context.missingNames.length > 0 ? context.missingNames.join(", ") : "None";
+  const recommendedOnly = context.recommendedOnlyNames.length > 0
+    ? context.recommendedOnlyNames.join(", ")
+    : "None";
+  const packOnly = context.packOnlyNames.length > 0 ? context.packOnlyNames.join(", ") : "None";
+
+  el.selectionSummary.innerHTML = `
+    <article class="selection-box">
+      <div class="panel-header">
+        <h3>Saved pack replay</h3>
+        <span class="chip">${context.format}</span>
+      </div>
+      <div class="matrix-stats">
+        <span class="badge" data-tone="accent">${context.matchedToolNameCount}/${context.requestedToolNameCount} names matched</span>
+        <span class="badge">${context.matchedToolCount} tools selected</span>
+        <span class="badge" data-tone="${context.missingNames.length > 0 ? "warning" : "accent"}">${context.missingNames.length} missing</span>
+      </div>
+      <p>Missing tool names: ${missing}</p>
+      <p>Recommended now but absent from the saved pack: ${recommendedOnly}</p>
+      <p>Still kept only by the saved pack: ${packOnly}</p>
+    </article>
+  `;
+}
+
 function updateExports() {
   const payloads = buildExportPayloads(state.serverName, state.analyzedTools, state.selectedIds);
   const report = buildAnalysisReport(
@@ -309,7 +359,8 @@ function updateExports() {
     el.taskInput.value.trim(),
     el.profileSelect.value,
     el.riskBudgetSelect.value,
-    state.selectedIds
+    state.selectedIds,
+    state.selectionContext || undefined
   );
   el.allowlistOutput.value = payloads.allowlist;
   el.packOutput.value = payloads.pack;
@@ -323,6 +374,7 @@ function updateExports() {
 function refreshAll() {
   renderTools();
   updateSummary();
+  renderSelectionSummary();
   renderProfileMatrix();
   renderBreakdowns();
   renderComparison();
@@ -346,7 +398,16 @@ function analyzeManifest() {
       el.profileSelect.value,
       el.riskBudgetSelect.value
     );
-    state.selectedIds = new Set(state.recommendedIds);
+    const savedPackInput = el.savedPackInput.value.trim();
+    if (savedPackInput) {
+      const parsedPack = parsePackSelection(savedPackInput);
+      const applied = applyPackSelection(state.analyzedTools, parsedPack, state.recommendedIds);
+      state.selectedIds = new Set(applied.selectedIds);
+      state.selectionContext = applied.selectionContext;
+    } else {
+      state.selectedIds = new Set(state.recommendedIds);
+      state.selectionContext = null;
+    }
     const compareInput = el.compareManifestInput.value.trim();
     if (compareInput) {
       const compareParsed = parseManifest(compareInput);
@@ -364,7 +425,11 @@ function analyzeManifest() {
       state.comparisonRawTools = [];
       state.comparisonReport = null;
     }
-    el.statusMessage.textContent = `Analyzed ${state.analyzedTools.length} tools from ${state.serverName}. Recommended pack ready.`;
+    if (state.selectionContext?.source === "pack") {
+      el.statusMessage.textContent = `Analyzed ${state.analyzedTools.length} tools from ${state.serverName}. Saved pack replay matched ${state.selectionContext.matchedToolNameCount}/${state.selectionContext.requestedToolNameCount} requested names.`;
+    } else {
+      el.statusMessage.textContent = `Analyzed ${state.analyzedTools.length} tools from ${state.serverName}. Recommended pack ready.`;
+    }
     refreshAll();
   } catch (error) {
     el.statusMessage.textContent = error instanceof Error ? error.message : "Unable to parse the manifest.";
@@ -374,6 +439,7 @@ function analyzeManifest() {
 function loadSample() {
   el.manifestInput.value = JSON.stringify(SAMPLE_MANIFEST, null, 2);
   el.compareManifestInput.value = "";
+  el.savedPackInput.value = "";
   el.taskInput.value = TASK_PRESETS.review;
   el.profileSelect.value = "balanced";
   el.riskBudgetSelect.value = "medium";
@@ -383,6 +449,7 @@ function loadSample() {
 function loadComparisonPair() {
   el.manifestInput.value = JSON.stringify(SAMPLE_MANIFEST, null, 2);
   el.compareManifestInput.value = JSON.stringify(COMPARISON_MANIFEST, null, 2);
+  el.savedPackInput.value = "";
   el.taskInput.value = TASK_PRESETS.coding;
   el.profileSelect.value = "coding";
   el.riskBudgetSelect.value = "medium";
@@ -398,7 +465,9 @@ el.taskInput.addEventListener("change", analyzeManifest);
 el.filterInput.addEventListener("input", renderTools);
 el.sortSelect.addEventListener("change", renderTools);
 el.selectRecommendedButton.addEventListener("click", () => {
+  state.selectionContext = null;
   state.selectedIds = new Set(state.recommendedIds);
+  el.statusMessage.textContent = `Analyzed ${state.analyzedTools.length} tools from ${state.serverName}. Recommended pack ready.`;
   refreshAll();
 });
 
@@ -417,6 +486,15 @@ el.compareFileInput.addEventListener("change", async (event) => {
     return;
   }
   el.compareManifestInput.value = await file.text();
+  analyzeManifest();
+});
+
+el.packFileInput.addEventListener("change", async (event) => {
+  const [file] = event.target.files;
+  if (!file) {
+    return;
+  }
+  el.savedPackInput.value = await file.text();
   analyzeManifest();
 });
 
@@ -453,11 +531,13 @@ document.addEventListener("change", (event) => {
   if (!toolId) {
     return;
   }
+  state.selectionContext = null;
   if (target.checked) {
     state.selectedIds.add(toolId);
   } else {
     state.selectedIds.delete(toolId);
   }
+  el.statusMessage.textContent = `Analyzed ${state.analyzedTools.length} tools from ${state.serverName}. Custom selection active.`;
   refreshAll();
 });
 

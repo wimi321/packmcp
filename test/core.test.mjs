@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
 import { SAMPLE_MANIFEST } from "../src/data.js";
 import {
+  applyPackSelection,
   analyzeTools,
   buildAnalysisReport,
   buildComparisonReport,
@@ -14,6 +15,7 @@ import {
   buildProfileMatrix,
   buildExportPayloads,
   buildPackSummary,
+  parsePackSelection,
   parseManifest,
   recommendPack
 } from "../src/core.js";
@@ -99,6 +101,38 @@ test("buildPackArtifact preserves selected tool definitions", () => {
   );
 });
 
+test("parsePackSelection accepts pack artifacts and allowlists", () => {
+  const fromArtifact = parsePackSelection({
+    kind: "packmcp-pack",
+    selectedToolNames: ["list_issues", "get_issue", "list_issues"]
+  });
+  const fromAllowlist = parsePackSelection(["get_issue", "comment_issue"]);
+
+  assert.equal(fromArtifact.source, "pack");
+  assert.deepEqual(fromArtifact.selectedToolNames, ["list_issues", "get_issue"]);
+  assert.equal(fromAllowlist.source, "allowlist");
+  assert.deepEqual(fromAllowlist.selectedToolNames, ["get_issue", "comment_issue"]);
+});
+
+test("applyPackSelection reports drift against the latest recommendation", () => {
+  const analyzed = analyzeTools(
+    SAMPLE_MANIFEST.tools,
+    "Read issues and inspect code safely.",
+    "balanced"
+  );
+  const recommendedIds = recommendPack(analyzed, "balanced", "medium");
+  const applied = applyPackSelection(
+    analyzed,
+    parsePackSelection(["get_issue", "missing_tool", "merge_pull_request"]),
+    recommendedIds
+  );
+
+  assert.ok(applied.selectedIds.size > 0);
+  assert.deepEqual(applied.selectionContext.missingNames, ["missing_tool"]);
+  assert.ok(Array.isArray(applied.selectionContext.recommendedOnlyNames));
+  assert.ok(Array.isArray(applied.selectionContext.packOnlyNames));
+});
+
 test("buildAnalysisReport includes profile matrix and structured exports", () => {
   const report = buildAnalysisReport(
     "github-mcp-server",
@@ -182,6 +216,48 @@ test("CLI analyze outputs a reusable pack artifact", () => {
   assert.equal(parsed.server, "github-mcp-server");
   assert.ok(Array.isArray(parsed.tools));
   assert.ok(parsed.tools.length > 0);
+});
+
+test("CLI analyze can replay a saved pack and report drift", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "packmcp-pack-"));
+  const packPath = join(tempDir, "saved.pack.json");
+  await writeFile(
+    packPath,
+    JSON.stringify({
+      kind: "packmcp-pack",
+      selectedToolNames: ["get_issue", "missing_tool"]
+    }),
+    "utf8"
+  );
+
+  const output = execFileSync(
+    "node",
+    [
+      "./bin/packmcp.mjs",
+      "analyze",
+      "--input",
+      "./examples/github-mcp-server.sample.json",
+      "--preset",
+      "review",
+      "--profile",
+      "balanced",
+      "--risk",
+      "medium",
+      "--pack",
+      packPath,
+      "--format",
+      "json"
+    ],
+    {
+      cwd: new URL("../", import.meta.url),
+      encoding: "utf8"
+    }
+  );
+
+  const parsed = JSON.parse(output);
+  assert.equal(parsed.selection.source, "pack");
+  assert.deepEqual(parsed.selection.missingNames, ["missing_tool"]);
+  assert.ok(parsed.summary.selectedCount > 0);
 });
 
 test("buildComparisonReport highlights overlap and pack differences", () => {
@@ -358,4 +434,45 @@ test("CLI inspect writes both Inspector payload and report files", async () => {
   assert.ok(Array.isArray(manifest.result.tools));
   assert.equal(report.server, "github");
   assert.ok(report.summary.selectedCount > 0);
+});
+
+test("CLI analyze strict mode fails when a saved pack is stale", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "packmcp-strict-"));
+  const packPath = join(tempDir, "stale.pack.json");
+  await writeFile(
+    packPath,
+    JSON.stringify({
+      kind: "packmcp-pack",
+      selectedToolNames: ["missing_tool"]
+    }),
+    "utf8"
+  );
+
+  const result = spawnSync(
+    "node",
+    [
+      "./bin/packmcp.mjs",
+      "analyze",
+      "--input",
+      "./examples/github-mcp-server.sample.json",
+      "--preset",
+      "review",
+      "--profile",
+      "balanced",
+      "--risk",
+      "medium",
+      "--pack",
+      packPath,
+      "--strict",
+      "--format",
+      "json"
+    ],
+    {
+      cwd: new URL("../", import.meta.url),
+      encoding: "utf8"
+    }
+  );
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Strict mode failed/);
 });

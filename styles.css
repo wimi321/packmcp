@@ -148,7 +148,8 @@ textarea {
 }
 
 .panel-header h2,
-.recommendation-box h3 {
+.recommendation-box h3,
+.selection-box h3 {
   margin: 0;
 }
 
@@ -215,6 +216,7 @@ textarea {
 }
 
 .recommendation-box,
+.selection-box,
 .empty-state {
   padding: 16px;
   border-radius: 20px;
@@ -223,10 +225,15 @@ textarea {
 }
 
 .recommendation-box p,
+.selection-box p,
 .empty-state {
   margin: 0;
   color: var(--muted);
   line-height: 1.55;
+}
+
+.selection-summary {
+  display: grid;
 }
 
 .task-presets,

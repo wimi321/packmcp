@@ -72,6 +72,39 @@ export function parseManifest(input) {
   throw new Error("Unsupported manifest shape. Paste an array, a { tools: [...] } object, or a tools/list payload.");
 }
 
+function normalizeStringList(values) {
+  return [...new Set(values.filter((value) => typeof value === "string" && value.trim().length > 0))];
+}
+
+export function parsePackSelection(input) {
+  const parsed = typeof input === "string" ? JSON.parse(input) : input;
+
+  if (Array.isArray(parsed)) {
+    return {
+      source: "allowlist",
+      selectedToolNames: normalizeStringList(parsed)
+    };
+  }
+
+  if (parsed && Array.isArray(parsed.selectedToolNames)) {
+    return {
+      source: parsed.kind === "packmcp-pack" ? "pack" : "selection",
+      selectedToolNames: normalizeStringList(parsed.selectedToolNames)
+    };
+  }
+
+  if (parsed && Array.isArray(parsed.tools)) {
+    return {
+      source: "tool-manifest",
+      selectedToolNames: normalizeStringList(parsed.tools.map((tool) => tool?.name))
+    };
+  }
+
+  throw new Error(
+    "Unsupported pack shape. Paste a PackMCP pack JSON, a { tools: [...] } object, or an allowlist array."
+  );
+}
+
 function countSchemaProperties(schema) {
   if (!schema || typeof schema !== "object") {
     return 0;
@@ -289,7 +322,7 @@ export function sortTools(tools, sortKey) {
   return sorted.sort((left, right) => right.relevance - left.relevance);
 }
 
-function buildRecommendationText(selectedTools, profileKey, riskBudgetKey) {
+function buildRecommendationText(selectedTools, profileKey, riskBudgetKey, selectionContext) {
   if (selectedTools.length === 0) {
     return "No tools are selected yet. Analyze a manifest or apply the recommended pack first.";
   }
@@ -300,13 +333,30 @@ function buildRecommendationText(selectedTools, profileKey, riskBudgetKey) {
   const base = `This ${PROFILE_CONFIG[profileKey].label.toLowerCase()} pack keeps ${selectedTools.length} tools across ${categories.slice(0, 4).join(", ")} while staying within a ${riskBudgetKey} risk budget.`;
 
   if (highRisk.length > 0) {
-    return `${base} High-risk tools still included: ${highRisk.join(", ")}. Keep them only if the task truly needs merges, writes, or release actions.`;
+    const riskText = `${base} High-risk tools still included: ${highRisk.join(", ")}. Keep them only if the task truly needs merges, writes, or release actions.`;
+    if (selectionContext?.source === "pack") {
+      return `${riskText} Saved pack replay matched ${selectionContext.matchedToolNameCount}/${selectionContext.requestedToolNameCount} requested tool names.`;
+    }
+    return riskText;
   }
 
-  return `${base} ${readHeavyCount} selected tools are strongly read-oriented, which keeps the pack cheaper to describe and easier to supervise.`;
+  const recommendation = `${base} ${readHeavyCount} selected tools are strongly read-oriented, which keeps the pack cheaper to describe and easier to supervise.`;
+  if (selectionContext?.source !== "pack") {
+    return recommendation;
+  }
+
+  if (selectionContext.missingNames.length > 0) {
+    return `${recommendation} Saved pack replay matched ${selectionContext.matchedToolNameCount}/${selectionContext.requestedToolNameCount} requested tool names; missing now: ${formatPreviewList(selectionContext.missingNames)}.`;
+  }
+
+  if (selectionContext.packOnlyNames.length > 0 || selectionContext.recommendedOnlyNames.length > 0) {
+    return `${recommendation} Saved pack replay differs from today's recommendation by ${selectionContext.packOnlyNames.length + selectionContext.recommendedOnlyNames.length} tool names.`;
+  }
+
+  return `${recommendation} Saved pack replay fully matches the current manifest and recommendation.`;
 }
 
-export function buildWarnings(tools, selectedIds) {
+export function buildWarnings(tools, selectedIds, selectionContext) {
   const selectedTools = tools.filter((tool) => selectedIds.has(tool.id));
   const warnings = [];
   const duplicateCount = tools.filter((tool) => tool.duplicate).length;
@@ -356,6 +406,30 @@ export function buildWarnings(tools, selectedIds) {
     });
   }
 
+  if (selectionContext?.source === "pack" && selectionContext.missingNames.length > 0) {
+    warnings.push({
+      tone: "warning",
+      title: "Saved pack is out of date",
+      body: `Pack replay could not find ${selectionContext.missingNames.length} requested tool names: ${formatPreviewList(selectionContext.missingNames)}. Refresh the saved pack or inspect the upstream MCP server changes.`
+    });
+  }
+
+  if (selectionContext?.source === "pack" && selectionContext.recommendedOnlyNames.length > 0) {
+    warnings.push({
+      tone: "accent",
+      title: "Today's recommendation adds more tools",
+      body: `The current recommendation would additionally keep ${selectionContext.recommendedOnlyNames.length} tool names: ${formatPreviewList(selectionContext.recommendedOnlyNames)}.`
+    });
+  }
+
+  if (selectionContext?.source === "pack" && selectionContext.packOnlyNames.length > 0) {
+    warnings.push({
+      tone: "warning",
+      title: "Saved pack keeps tools outside today's recommendation",
+      body: `The saved pack still includes ${selectionContext.packOnlyNames.length} tool names that the current recommendation would drop: ${formatPreviewList(selectionContext.packOnlyNames)}.`
+    });
+  }
+
   if (warnings.length === 0) {
     warnings.push({
       tone: "accent",
@@ -367,7 +441,7 @@ export function buildWarnings(tools, selectedIds) {
   return warnings;
 }
 
-export function buildPackSummary(tools, selectedIds, profileKey, riskBudgetKey) {
+export function buildPackSummary(tools, selectedIds, profileKey, riskBudgetKey, selectionContext) {
   const selectedTools = tools.filter((tool) => selectedIds.has(tool.id));
   const allTokens = tools.reduce((sum, tool) => sum + tool.estimatedTokens, 0);
   const selectedTokens = selectedTools.reduce((sum, tool) => sum + tool.estimatedTokens, 0);
@@ -385,8 +459,8 @@ export function buildPackSummary(tools, selectedIds, profileKey, riskBudgetKey) 
     highRiskCount,
     duplicateCount,
     selectedCategories,
-    recommendation: buildRecommendationText(selectedTools, profileKey, riskBudgetKey),
-    warnings: buildWarnings(tools, selectedIds)
+    recommendation: buildRecommendationText(selectedTools, profileKey, riskBudgetKey, selectionContext),
+    warnings: buildWarnings(tools, selectedIds, selectionContext)
   };
 }
 
@@ -434,10 +508,10 @@ export function buildProfileMatrix(rawTools, task, riskBudgetKey) {
   });
 }
 
-export function buildAnalysisReport(serverName, rawTools, task, profileKey, riskBudgetKey, selectedIds) {
+export function buildAnalysisReport(serverName, rawTools, task, profileKey, riskBudgetKey, selectedIds, selectionContext) {
   const analyzed = analyzeTools(rawTools, task, profileKey);
   const activeSelection = selectedIds ? new Set(selectedIds) : recommendPack(analyzed, profileKey, riskBudgetKey);
-  const summary = buildPackSummary(analyzed, activeSelection, profileKey, riskBudgetKey);
+  const summary = buildPackSummary(analyzed, activeSelection, profileKey, riskBudgetKey, selectionContext);
   const exportsPayload = buildExportPayloads(serverName, analyzed, activeSelection);
   const categoryBreakdown = buildCategoryBreakdown(analyzed, activeSelection);
   const riskBreakdown = buildRiskBreakdown(analyzed, activeSelection);
@@ -470,6 +544,7 @@ export function buildAnalysisReport(serverName, rawTools, task, profileKey, risk
     },
     recommendation: summary.recommendation,
     warnings: summary.warnings,
+    selection: selectionContext,
     selectedTools,
     categoryBreakdown,
     riskBreakdown,
@@ -496,6 +571,46 @@ function setIntersection(left, right) {
 
 function setDifference(left, right) {
   return [...left].filter((value) => !right.has(value)).sort((a, b) => a.localeCompare(b));
+}
+
+function getSelectedToolNames(tools, selectedIds) {
+  return normalizeStringList(tools.filter((tool) => selectedIds.has(tool.id)).map((tool) => tool.name));
+}
+
+function formatPreviewList(names, limit = 4) {
+  if (names.length === 0) {
+    return "";
+  }
+
+  const preview = names.slice(0, limit);
+  return names.length > limit ? `${preview.join(", ")}, and ${names.length - limit} more` : preview.join(", ");
+}
+
+export function applyPackSelection(tools, parsedPack, recommendedIds = new Set()) {
+  const requestedNames = normalizeStringList(parsedPack.selectedToolNames || []);
+  const requestedNameSet = new Set(requestedNames);
+  const selectedIds = new Set(tools.filter((tool) => requestedNameSet.has(tool.name)).map((tool) => tool.id));
+  const matchedNames = getSelectedToolNames(tools, selectedIds);
+  const matchedNameSet = new Set(matchedNames);
+  const missingNames = requestedNames.filter((name) => !matchedNameSet.has(name));
+  const recommendedNames = getSelectedToolNames(tools, recommendedIds);
+  const recommendedNameSet = new Set(recommendedNames);
+
+  return {
+    selectedIds,
+    selectionContext: {
+      source: "pack",
+      format: parsedPack.source,
+      requestedToolNameCount: requestedNames.length,
+      matchedToolNameCount: matchedNames.length,
+      matchedToolCount: selectedIds.size,
+      missingNames,
+      matchedNames,
+      overlapWithRecommended: setIntersection(matchedNameSet, recommendedNameSet),
+      recommendedOnlyNames: setDifference(recommendedNameSet, matchedNameSet),
+      packOnlyNames: setDifference(matchedNameSet, recommendedNameSet)
+    }
+  };
 }
 
 function buildComparisonNarrative(leftReport, rightReport, overlap) {
