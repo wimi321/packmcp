@@ -93,8 +93,12 @@ test("buildPackArtifact preserves selected tool definitions", () => {
   const artifact = buildPackArtifact("github-mcp-server", analyzed, selectedIds);
 
   assert.equal(artifact.kind, "packmcp-pack");
+  assert.equal(artifact.version, 2);
   assert.ok(Array.isArray(artifact.tools));
   assert.ok(artifact.tools.length > 0);
+  assert.equal(typeof artifact.sourceManifest.fingerprint, "string");
+  assert.equal(artifact.sourceManifest.toolCount, analyzed.length);
+  assert.equal(artifact.selectedToolSnapshots.length, artifact.selectedToolNames.length);
   assert.deepEqual(
     artifact.selectedToolNames,
     artifact.tools.map((tool) => tool.name)
@@ -110,25 +114,42 @@ test("parsePackSelection accepts pack artifacts and allowlists", () => {
 
   assert.equal(fromArtifact.source, "pack");
   assert.deepEqual(fromArtifact.selectedToolNames, ["list_issues", "get_issue"]);
+  assert.ok(Array.isArray(fromArtifact.selectedToolSnapshots));
   assert.equal(fromAllowlist.source, "allowlist");
   assert.deepEqual(fromAllowlist.selectedToolNames, ["get_issue", "comment_issue"]);
 });
 
-test("applyPackSelection reports drift against the latest recommendation", () => {
+test("applyPackSelection reports missing and changed tools against the latest recommendation", () => {
   const analyzed = analyzeTools(
     SAMPLE_MANIFEST.tools,
     "Read issues and inspect code safely.",
     "balanced"
   );
   const recommendedIds = recommendPack(analyzed, "balanced", "medium");
+  const savedArtifact = buildPackArtifact("github-mcp-server", analyzed, recommendedIds);
+  const changedManifest = SAMPLE_MANIFEST.tools.map((tool) =>
+    tool.name === "get_issue"
+      ? { ...tool, description: "Read a single issue with a changed schema contract." }
+      : tool
+  );
+  const changedAnalyzed = analyzeTools(
+    changedManifest,
+    "Read issues and inspect code safely.",
+    "balanced"
+  );
   const applied = applyPackSelection(
-    analyzed,
-    parsePackSelection(["get_issue", "missing_tool", "merge_pull_request"]),
+    changedAnalyzed,
+    parsePackSelection({
+      ...savedArtifact,
+      selectedToolNames: [...savedArtifact.selectedToolNames, "missing_tool"]
+    }),
     recommendedIds
   );
 
   assert.ok(applied.selectedIds.size > 0);
   assert.deepEqual(applied.selectionContext.missingNames, ["missing_tool"]);
+  assert.ok(applied.selectionContext.changedNames.includes("get_issue"));
+  assert.equal(applied.selectionContext.manifestFingerprintChanged, true);
   assert.ok(Array.isArray(applied.selectionContext.recommendedOnlyNames));
   assert.ok(Array.isArray(applied.selectionContext.packOnlyNames));
 });
@@ -214,6 +235,8 @@ test("CLI analyze outputs a reusable pack artifact", () => {
   const parsed = JSON.parse(output);
   assert.equal(parsed.kind, "packmcp-pack");
   assert.equal(parsed.server, "github-mcp-server");
+  assert.equal(parsed.version, 2);
+  assert.equal(typeof parsed.sourceManifest.fingerprint, "string");
   assert.ok(Array.isArray(parsed.tools));
   assert.ok(parsed.tools.length > 0);
 });
@@ -475,4 +498,61 @@ test("CLI analyze strict mode fails when a saved pack is stale", async () => {
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Strict mode failed/);
+});
+
+test("CLI analyze strict mode fails when a saved tool definition changed", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "packmcp-strict-changed-"));
+  const packPath = join(tempDir, "saved.pack.json");
+  const manifestPath = join(tempDir, "changed-manifest.json");
+  const analyzed = analyzeTools(
+    SAMPLE_MANIFEST.tools,
+    "Read issues and inspect code safely.",
+    "balanced"
+  );
+  const selectedIds = recommendPack(analyzed, "balanced", "medium");
+  await writeFile(
+    packPath,
+    JSON.stringify(buildPackArtifact("github-mcp-server", analyzed, selectedIds)),
+    "utf8"
+  );
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      server: "github-mcp-server",
+      tools: SAMPLE_MANIFEST.tools.map((tool) =>
+        tool.name === "get_issue"
+          ? { ...tool, description: "Read a single issue with a changed schema contract." }
+          : tool
+      )
+    }),
+    "utf8"
+  );
+
+  const result = spawnSync(
+    "node",
+    [
+      "./bin/packmcp.mjs",
+      "analyze",
+      "--input",
+      manifestPath,
+      "--preset",
+      "review",
+      "--profile",
+      "balanced",
+      "--risk",
+      "medium",
+      "--pack",
+      packPath,
+      "--strict",
+      "--format",
+      "json"
+    ],
+    {
+      cwd: new URL("../", import.meta.url),
+      encoding: "utf8"
+    }
+  );
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /changed tool definitions/);
 });

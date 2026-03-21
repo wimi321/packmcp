@@ -92,9 +92,13 @@ function copyWithFallback(text) {
 function formatToolCard(tool) {
   const checked = state.selectedIds.has(tool.id) ? "checked" : "";
   let selectionBadge = "";
+  const changedInSavedPack = state.selectionContext?.source === "pack" &&
+    state.selectionContext.changedNames.includes(tool.name);
 
   if (state.selectionContext?.source === "pack") {
-    if (state.selectedIds.has(tool.id) && state.recommendedIds.has(tool.id)) {
+    if (changedInSavedPack && state.selectedIds.has(tool.id)) {
+      selectionBadge = '<span class="badge" data-tone="warning">Changed since save</span>';
+    } else if (state.selectedIds.has(tool.id) && state.recommendedIds.has(tool.id)) {
       selectionBadge = '<span class="badge" data-tone="accent">Saved + recommended</span>';
     } else if (state.selectedIds.has(tool.id)) {
       selectionBadge = '<span class="badge" data-tone="warning">Saved pack</span>';
@@ -328,6 +332,7 @@ function renderSelectionSummary() {
 
   const context = state.selectionContext;
   const missing = context.missingNames.length > 0 ? context.missingNames.join(", ") : "None";
+  const changed = context.changedNames.length > 0 ? context.changedNames.join(", ") : "None";
   const recommendedOnly = context.recommendedOnlyNames.length > 0
     ? context.recommendedOnlyNames.join(", ")
     : "None";
@@ -343,10 +348,13 @@ function renderSelectionSummary() {
         <span class="badge" data-tone="accent">${context.matchedToolNameCount}/${context.requestedToolNameCount} names matched</span>
         <span class="badge">${context.matchedToolCount} tools selected</span>
         <span class="badge" data-tone="${context.missingNames.length > 0 ? "warning" : "accent"}">${context.missingNames.length} missing</span>
+        <span class="badge" data-tone="${context.changedNames.length > 0 ? "warning" : "accent"}">${context.changedNames.length} changed</span>
       </div>
       <p>Missing tool names: ${missing}</p>
+      <p>Changed tool definitions: ${changed}</p>
       <p>Recommended now but absent from the saved pack: ${recommendedOnly}</p>
       <p>Still kept only by the saved pack: ${packOnly}</p>
+      <p>Manifest fingerprint changed: ${context.manifestFingerprintChanged ? "Yes" : "No"}</p>
     </article>
   `;
 }

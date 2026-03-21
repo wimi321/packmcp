@@ -76,27 +76,109 @@ function normalizeStringList(values) {
   return [...new Set(values.filter((value) => typeof value === "string" && value.trim().length > 0))];
 }
 
+function stableSerialize(value) {
+  if (value === null) {
+    return "null";
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
+  }
+
+  if (typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort((left, right) => left.localeCompare(right))
+      .map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`)
+      .join(",")}}`;
+  }
+
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    return JSON.stringify(String(value));
+  }
+
+  return JSON.stringify(value);
+}
+
+function fingerprintText(text) {
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function getRawToolDefinition(tool) {
+  return tool?.rawTool || tool || {};
+}
+
+export function buildToolFingerprint(tool) {
+  const definition = getRawToolDefinition(tool);
+  return fingerprintText(
+    stableSerialize({
+      name: definition.name || "",
+      description: definition.description || "",
+      inputSchema: definition.inputSchema || {}
+    })
+  );
+}
+
+function buildToolSnapshot(tool) {
+  const definition = getRawToolDefinition(tool);
+  return {
+    name: definition.name || "unknown-tool",
+    fingerprint: buildToolFingerprint(definition)
+  };
+}
+
+function normalizeToolSnapshots(entries) {
+  const byName = new Map();
+  for (const entry of entries) {
+    if (!entry || typeof entry.name !== "string" || entry.name.trim().length === 0) {
+      continue;
+    }
+    byName.set(entry.name, {
+      name: entry.name,
+      fingerprint: typeof entry.fingerprint === "string" ? entry.fingerprint : ""
+    });
+  }
+  return [...byName.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function buildManifestFingerprint(tools) {
+  return fingerprintText(stableSerialize(tools.map((tool) => buildToolSnapshot(tool))));
+}
+
 export function parsePackSelection(input) {
   const parsed = typeof input === "string" ? JSON.parse(input) : input;
 
   if (Array.isArray(parsed)) {
     return {
       source: "allowlist",
-      selectedToolNames: normalizeStringList(parsed)
+      selectedToolNames: normalizeStringList(parsed),
+      selectedToolSnapshots: [],
+      sourceManifestFingerprint: undefined,
+      sourceManifestToolCount: undefined
     };
   }
 
   if (parsed && Array.isArray(parsed.selectedToolNames)) {
     return {
       source: parsed.kind === "packmcp-pack" ? "pack" : "selection",
-      selectedToolNames: normalizeStringList(parsed.selectedToolNames)
+      selectedToolNames: normalizeStringList(parsed.selectedToolNames),
+      selectedToolSnapshots: normalizeToolSnapshots(parsed.selectedToolSnapshots || parsed.tools || []),
+      sourceManifestFingerprint: parsed.sourceManifest?.fingerprint,
+      sourceManifestToolCount: parsed.sourceManifest?.toolCount
     };
   }
 
   if (parsed && Array.isArray(parsed.tools)) {
     return {
       source: "tool-manifest",
-      selectedToolNames: normalizeStringList(parsed.tools.map((tool) => tool?.name))
+      selectedToolNames: normalizeStringList(parsed.tools.map((tool) => tool?.name)),
+      selectedToolSnapshots: normalizeToolSnapshots(parsed.tools.map((tool) => buildToolSnapshot(tool))),
+      sourceManifestFingerprint: parsed.sourceManifest?.fingerprint,
+      sourceManifestToolCount: parsed.sourceManifest?.toolCount
     };
   }
 
@@ -331,13 +413,12 @@ function buildRecommendationText(selectedTools, profileKey, riskBudgetKey, selec
   const highRisk = selectedTools.filter((tool) => tool.risk.level === "high").map((tool) => tool.name);
   const readHeavyCount = selectedTools.filter((tool) => tool.readHeavy).length;
   const base = `This ${PROFILE_CONFIG[profileKey].label.toLowerCase()} pack keeps ${selectedTools.length} tools across ${categories.slice(0, 4).join(", ")} while staying within a ${riskBudgetKey} risk budget.`;
+  const replaySuffix = selectionContext?.source === "pack"
+    ? ` Saved pack replay matched ${selectionContext.matchedToolNameCount}/${selectionContext.requestedToolNameCount} requested tool names.`
+    : "";
 
   if (highRisk.length > 0) {
-    const riskText = `${base} High-risk tools still included: ${highRisk.join(", ")}. Keep them only if the task truly needs merges, writes, or release actions.`;
-    if (selectionContext?.source === "pack") {
-      return `${riskText} Saved pack replay matched ${selectionContext.matchedToolNameCount}/${selectionContext.requestedToolNameCount} requested tool names.`;
-    }
-    return riskText;
+    return `${base} High-risk tools still included: ${highRisk.join(", ")}. Keep them only if the task truly needs merges, writes, or release actions.${replaySuffix}`;
   }
 
   const recommendation = `${base} ${readHeavyCount} selected tools are strongly read-oriented, which keeps the pack cheaper to describe and easier to supervise.`;
@@ -346,14 +427,22 @@ function buildRecommendationText(selectedTools, profileKey, riskBudgetKey, selec
   }
 
   if (selectionContext.missingNames.length > 0) {
-    return `${recommendation} Saved pack replay matched ${selectionContext.matchedToolNameCount}/${selectionContext.requestedToolNameCount} requested tool names; missing now: ${formatPreviewList(selectionContext.missingNames)}.`;
+    return `${recommendation}${replaySuffix} Missing now: ${formatPreviewList(selectionContext.missingNames)}.`;
+  }
+
+  if (selectionContext.changedNames.length > 0) {
+    return `${recommendation}${replaySuffix} Tool definitions changed since save: ${formatPreviewList(selectionContext.changedNames)}.`;
   }
 
   if (selectionContext.packOnlyNames.length > 0 || selectionContext.recommendedOnlyNames.length > 0) {
-    return `${recommendation} Saved pack replay differs from today's recommendation by ${selectionContext.packOnlyNames.length + selectionContext.recommendedOnlyNames.length} tool names.`;
+    return `${recommendation}${replaySuffix} Saved pack replay differs from today's recommendation by ${selectionContext.packOnlyNames.length + selectionContext.recommendedOnlyNames.length} tool names.`;
   }
 
-  return `${recommendation} Saved pack replay fully matches the current manifest and recommendation.`;
+  if (selectionContext.manifestFingerprintChanged) {
+    return `${recommendation}${replaySuffix} The overall manifest changed since the pack was saved, but the selected tools still match.`;
+  }
+
+  return `${recommendation}${replaySuffix} Saved pack replay fully matches the current manifest and recommendation.`;
 }
 
 export function buildWarnings(tools, selectedIds, selectionContext) {
@@ -414,6 +503,14 @@ export function buildWarnings(tools, selectedIds, selectionContext) {
     });
   }
 
+  if (selectionContext?.source === "pack" && selectionContext.changedNames.length > 0) {
+    warnings.push({
+      tone: "warning",
+      title: "Saved tool definitions changed",
+      body: `${selectionContext.changedNames.length} saved tool definitions no longer match the current manifest: ${formatPreviewList(selectionContext.changedNames)}. Review schema and description changes before trusting the old pack.`
+    });
+  }
+
   if (selectionContext?.source === "pack" && selectionContext.recommendedOnlyNames.length > 0) {
     warnings.push({
       tone: "accent",
@@ -427,6 +524,19 @@ export function buildWarnings(tools, selectedIds, selectionContext) {
       tone: "warning",
       title: "Saved pack keeps tools outside today's recommendation",
       body: `The saved pack still includes ${selectionContext.packOnlyNames.length} tool names that the current recommendation would drop: ${formatPreviewList(selectionContext.packOnlyNames)}.`
+    });
+  }
+
+  if (
+    selectionContext?.source === "pack" &&
+    selectionContext.manifestFingerprintChanged &&
+    selectionContext.missingNames.length === 0 &&
+    selectionContext.changedNames.length === 0
+  ) {
+    warnings.push({
+      tone: "accent",
+      title: "Manifest changed since the pack was saved",
+      body: "The overall MCP manifest fingerprint changed, but the selected tool definitions still match. You may still want to review newly added tools."
     });
   }
 
@@ -595,6 +705,28 @@ export function applyPackSelection(tools, parsedPack, recommendedIds = new Set()
   const missingNames = requestedNames.filter((name) => !matchedNameSet.has(name));
   const recommendedNames = getSelectedToolNames(tools, recommendedIds);
   const recommendedNameSet = new Set(recommendedNames);
+  const currentFingerprintsByName = new Map();
+  const savedFingerprintsByName = new Map(
+    (parsedPack.selectedToolSnapshots || []).map((entry) => [entry.name, entry.fingerprint])
+  );
+
+  for (const tool of tools) {
+    if (!requestedNameSet.has(tool.name)) {
+      continue;
+    }
+    const fingerprints = currentFingerprintsByName.get(tool.name) || [];
+    fingerprints.push(buildToolFingerprint(tool));
+    currentFingerprintsByName.set(tool.name, fingerprints);
+  }
+
+  const changedNames = matchedNames.filter((name) => {
+    const savedFingerprint = savedFingerprintsByName.get(name);
+    if (!savedFingerprint) {
+      return false;
+    }
+    return !(currentFingerprintsByName.get(name) || []).includes(savedFingerprint);
+  });
+  const currentManifestFingerprint = buildManifestFingerprint(tools);
 
   return {
     selectedIds,
@@ -605,10 +737,18 @@ export function applyPackSelection(tools, parsedPack, recommendedIds = new Set()
       matchedToolNameCount: matchedNames.length,
       matchedToolCount: selectedIds.size,
       missingNames,
+      changedNames,
       matchedNames,
       overlapWithRecommended: setIntersection(matchedNameSet, recommendedNameSet),
       recommendedOnlyNames: setDifference(recommendedNameSet, matchedNameSet),
-      packOnlyNames: setDifference(matchedNameSet, recommendedNameSet)
+      packOnlyNames: setDifference(matchedNameSet, recommendedNameSet),
+      savedManifestFingerprint: parsedPack.sourceManifestFingerprint,
+      currentManifestFingerprint,
+      manifestFingerprintChanged:
+        typeof parsedPack.sourceManifestFingerprint === "string" &&
+        parsedPack.sourceManifestFingerprint !== currentManifestFingerprint,
+      savedManifestToolCount: parsedPack.sourceManifestToolCount,
+      currentManifestToolCount: tools.length
     }
   };
 }
@@ -692,10 +832,15 @@ export function buildPackArtifact(serverName, tools, selectedIds) {
   const selectedNames = [...new Set(selectedTools.map((tool) => tool.name))];
 
   return {
-    version: 1,
+    version: 2,
     kind: "packmcp-pack",
     server: serverName,
+    sourceManifest: {
+      toolCount: tools.length,
+      fingerprint: buildManifestFingerprint(tools)
+    },
     selectedToolNames: selectedNames,
+    selectedToolSnapshots: normalizeToolSnapshots(selectedTools.map((tool) => buildToolSnapshot(tool))),
     estimatedTokenCost: selectedTools.reduce((sum, tool) => sum + tool.estimatedTokens, 0),
     tools: selectedTools.map((tool) => ({
       name: tool.name,

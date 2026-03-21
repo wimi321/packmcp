@@ -1,12 +1,34 @@
 {
-  "version": 1,
+  "version": 2,
   "kind": "packmcp-pack",
   "server": "github-mcp-server",
+  "sourceManifest": {
+    "toolCount": 5,
+    "fingerprint": "920d7935"
+  },
   "selectedToolNames": [
     "list_issues",
     "get_issue",
     "comment_issue",
     "commit_files"
+  ],
+  "selectedToolSnapshots": [
+    {
+      "name": "comment_issue",
+      "fingerprint": "8a4c7772"
+    },
+    {
+      "name": "commit_files",
+      "fingerprint": "81617205"
+    },
+    {
+      "name": "get_issue",
+      "fingerprint": "2cef4cd6"
+    },
+    {
+      "name": "list_issues",
+      "fingerprint": "4d2d12f1"
+    }
   ],
   "estimatedTokenCost": 271,
   "tools": [

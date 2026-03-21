@@ -100,9 +100,20 @@ function maybeApplyStrictMode(args, selectionContext) {
     return;
   }
 
-  if (selectionContext.missingNames.length > 0) {
+  if (selectionContext.missingNames.length > 0 || selectionContext.changedNames.length > 0) {
+    const problems = [];
+    if (selectionContext.missingNames.length > 0) {
+      problems.push(
+        `${selectionContext.missingNames.length} missing tool names: ${selectionContext.missingNames.join(", ")}`
+      );
+    }
+    if (selectionContext.changedNames.length > 0) {
+      problems.push(
+        `${selectionContext.changedNames.length} changed tool definitions: ${selectionContext.changedNames.join(", ")}`
+      );
+    }
     console.error(
-      `Strict mode failed: ${selectionContext.missingNames.length} saved tool names are missing: ${selectionContext.missingNames.join(", ")}`
+      `Strict mode failed: ${problems.join("; ")}`
     );
     process.exitCode = 1;
   }
@@ -116,11 +127,15 @@ function renderSelectionLines(selectionContext) {
   const missing = selectionContext.missingNames.length > 0
     ? selectionContext.missingNames.join(", ")
     : "None";
+  const changed = selectionContext.changedNames.length > 0
+    ? selectionContext.changedNames.join(", ")
+    : "None";
 
   return [
     `- Selection source: saved ${selectionContext.format}`,
     `- Pack replay: ${selectionContext.matchedToolNameCount}/${selectionContext.requestedToolNameCount} requested names matched`,
-    `- Missing tool names: ${missing}`
+    `- Missing tool names: ${missing}`,
+    `- Changed tool definitions: ${changed}`
   ].join("\n");
 }
 

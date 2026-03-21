@@ -14,6 +14,7 @@ Instead of handing every tool to the agent, PackMCP lets you:
 - score tools against a concrete task and pack profile
 - generate a reusable PackMCP pack JSON with only the selected tools
 - replay a saved pack or allowlist against a newer manifest and detect drift
+- fingerprint saved tool definitions so drift checks catch schema changes, not just missing names
 - export a tighter allowlist for Python and TypeScript runtimes
 - run the same analysis from the CLI for scripts and CI
 - compare two MCP manifests before migration or rollout
@@ -38,6 +39,7 @@ PackMCP is built for that layer.
 - copyable exports for allowlists and SDK filters
 - reusable pack artifact export for downstream enforcement or review flows
 - saved pack replay with drift warnings and optional strict CI failure mode
+- definition-level drift detection for saved packs and Inspector-backed reviews
 - optional multi-manifest comparison mode
 - official MCP Inspector CLI integration for live server analysis
 - sample manifest and testable core logic
@@ -162,7 +164,7 @@ packmcp analyze \
   --output ./github-review.pack.json
 ```
 
-Replay a saved pack against a newer manifest and fail CI if tools disappeared:
+Replay a saved pack against a newer manifest and fail CI if tools disappeared or their definitions changed:
 
 ```bash
 packmcp analyze \
@@ -209,7 +211,7 @@ The bundled `examples/mcp.json.sample` file uses placeholder credentials. Use re
 
 The `pack` export keeps the selected tools in a normalized `{ server, tools }`-compatible shape, so you can version it in git, feed it back into PackMCP later, or hand it off to a future runtime proxy layer.
 
-When you pass `--pack`, PackMCP replays the saved selection against the current manifest or live Inspector result, reports missing tool names, highlights where today's recommendation changed, and can exit non-zero with `--strict` for CI gating.
+When you pass `--pack`, PackMCP replays the saved selection against the current manifest or live Inspector result, reports missing tool names, fingerprints selected tool definitions to catch schema drift, highlights where today's recommendation changed, and can exit non-zero with `--strict` for CI gating.
 
 ## Next upgrades
 
